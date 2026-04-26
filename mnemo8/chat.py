@@ -2,10 +2,23 @@ import sys
 from rich.console import Console
 from rich.prompt import Prompt
 from rich.panel import Panel
+from rich.markdown import Markdown
+
+import ollama
 
 from mnemo8.models import RuntimeState
 
 console = Console()
+
+def build_system_prompt(state: RuntimeState) -> str:
+    prompt = "You are Mnemo8, a helpful personal assistant CLI running on the user's terminal.\n"
+    if state.agents_content:
+        prompt += f"\nHere is information about available agents that might be relevant:\n{state.agents_content}\n"
+    if state.skills:
+        prompt += "\nHere are your available skills that you should be aware of:\n"
+        for skill in state.skills:
+            prompt += f"\n--- Skill: {skill.name} ---\n{skill.content}\n"
+    return prompt
 
 def start_chat(state: RuntimeState):
     """Start the REPL chat loop."""
@@ -21,6 +34,9 @@ def start_chat(state: RuntimeState):
         
     console.print(f"Skills loaded: [green]{len(state.skills)}[/green]\n")
 
+    system_prompt = build_system_prompt(state)
+    messages = [{"role": "system", "content": system_prompt}]
+
     # REPL Loop
     while True:
         try:
@@ -32,8 +48,23 @@ def start_chat(state: RuntimeState):
                 console.print("\n[yellow]Exiting Mnemo8...[/yellow]")
                 break
                 
-            # Dummy response
-            console.print("[bold cyan]Mnemo8[/bold cyan] > This is a dummy MVP response. Assistant runtime loaded successfully.\n")
+            if not user_input.strip():
+                continue
+                
+            messages.append({"role": "user", "content": user_input})
+            
+            with console.status("[bold cyan]Thinking...[/bold cyan]"):
+                response = ollama.chat(
+                    model='llama3.1:8b',
+                    messages=messages
+                )
+            
+            assistant_content = response['message']['content']
+            messages.append({"role": "assistant", "content": assistant_content})
+            
+            console.print("\n[bold cyan]Mnemo8[/bold cyan] >")
+            console.print(Markdown(assistant_content))
+            console.print()
             
         except (KeyboardInterrupt, EOFError):
             console.print("\n\n[yellow]Exiting Mnemo8...[/yellow]")
