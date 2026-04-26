@@ -1,1 +1,1 @@
-"""Mnemo8 CLI Assistant"""
+"""mnemo8 CLI Assistant"""

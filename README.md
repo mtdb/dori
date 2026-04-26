@@ -1,4 +1,4 @@
-# Mnemo8 MVP
+# mnemo8 MVP
 
 A non-functional, terminal-based personal assistant CLI to validate configuration models and terminal UX.
 
@@ -23,6 +23,6 @@ It will look for an `AGENTS.md` file and a `skills/` folder in your current work
 
 ## Development
 
-Because the project is installed using `-e` (editable mode), any changes you make to the source code in the `mnemo8/` directory are **immediately reflected** the next time you run the `mnemo8` command. 
+Because the project is installed using `-e` (editable mode), any changes you make to the source code in the `mnemo8/` directory are **immediately reflected** the next time you run the `mnemo8` command.
 
 You do not need to re-run `pip install` or "refresh" the application after making a code change. Just exit the CLI (by typing `exit`) and start it again.

@@ -11,7 +11,7 @@ from mnemo8.models import RuntimeState
 console = Console()
 
 def build_system_prompt(state: RuntimeState) -> str:
-    prompt = "You are Mnemo8, a helpful personal assistant CLI running on the user's terminal.\n"
+    prompt = "You are mnemo8, a helpful personal assistant CLI running on the user's terminal.\n"
     if state.agents_content:
         prompt += f"\nHere is information about available agents that might be relevant:\n{state.agents_content}\n"
     if state.skills:
@@ -24,7 +24,7 @@ def start_chat(state: RuntimeState):
     """Start the REPL chat loop."""
     
     # Startup Summary
-    console.print(f"\n[bold cyan]Mnemo8 Personal Assistant[/bold cyan]")
+    console.print(f"\n[bold cyan]mnemo8 Personal Assistant[/bold cyan]")
     console.print(f"Directory: [green]{state.cwd}[/green]")
     
     if state.agents_content is not None:
@@ -45,7 +45,7 @@ def start_chat(state: RuntimeState):
             
             # Check for exit commands
             if user_input.strip().lower() in ["exit", "quit"]:
-                console.print("\n[yellow]Exiting Mnemo8...[/yellow]")
+                console.print("\n[yellow]Exiting mnemo8...[/yellow]")
                 break
                 
             if not user_input.strip():
@@ -62,12 +62,12 @@ def start_chat(state: RuntimeState):
             assistant_content = response['message']['content']
             messages.append({"role": "assistant", "content": assistant_content})
             
-            console.print("\n[bold cyan]Mnemo8[/bold cyan] >")
+            console.print("\n[bold cyan]mnemo8[/bold cyan] >")
             console.print(Markdown(assistant_content))
             console.print()
             
         except (KeyboardInterrupt, EOFError):
-            console.print("\n\n[yellow]Exiting Mnemo8...[/yellow]")
+            console.print("\n\n[yellow]Exiting mnemo8...[/yellow]")
             break
         except Exception as e:
             console.print(f"\n[red]An error occurred: {e}[/red]")

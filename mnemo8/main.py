@@ -1,17 +1,29 @@
 import os
 import sys
+import argparse
 
 from mnemo8.loader import load_agents, load_skills
 from mnemo8.models import RuntimeState
 from mnemo8.chat import start_chat
+from mnemo8.commands import init_workspace
 
 
 def run():
     """Main entry point for the mnemo8 CLI."""
+    parser = argparse.ArgumentParser(description="mnemo8 Personal Assistant")
+    subparsers = parser.add_subparsers(dest="command")
+
+    # Command: init
+    subparsers.add_parser("init", help="Initialize the workspace with default agents and skills")
+
+    args = parser.parse_args()
+    cwd = os.getcwd()
+
+    if args.command == "init":
+        init_workspace(cwd)
+        return
+
     try:
-        # Step 1: Resolve Current Directory
-        cwd = os.getcwd()
-        
         # Step 2: Search for AGENTS.md
         agents_content = load_agents(cwd)
         
@@ -30,7 +42,7 @@ def run():
         start_chat(state)
         
     except Exception as e:
-        print(f"Failed to start Mnemo8: {e}", file=sys.stderr)
+        print(f"Failed to start mnemo8: {e}", file=sys.stderr)
         sys.exit(1)
 
 if __name__ == "__main__":
