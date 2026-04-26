@@ -18,13 +18,27 @@ Your primary purpose is to help me organize my thoughts, manage my notes, and na
 - You prioritize the local context of my files and workflows over generic web knowledge.
 """
 
-DEFAULT_SKILL_MD = """# Example Skill
+DEFAULT_SKILL_MD = """# Reminder Skill
+---
+name: reminder
+description: "Create and manage short reminders, todo items, and calendar events. Use when: add/edit/list/remove reminders. Optimized for small LLMs."
+user-invocable: true
+applyTo: ["**/*"]
+version: "0.1.0"
+---
 
-This is an example skill. Use this file to define specific workflows, formatting rules, or tools the assistant should use for particular tasks.
+# Reminder Skill
 
-## Usage
+Compact guidance for workspace assistants focused on organization tasks (reminders, todos, short calendar events). Keep prompts and outputs minimal for small models.
 
-Describe when and how the assistant should apply this skill.
+Usage:
+- Trigger with: "add reminder", "list reminders", "create event"
+- Response style: one-line confirmation plus concise bullet details
+- Follow-ups: ask only if the time/date or recipient is ambiguous
+
+Example:
+- Add: "Add reminder: Pay rent tomorrow 9am"
+    - Reply: "Reminder added — Pay rent — Tomorrow 09:00"
 """
 
 def init_workspace(cwd: str):
@@ -32,7 +46,7 @@ def init_workspace(cwd: str):
     root_path = Path(cwd)
     agents_file = root_path / "AGENTS.md"
     skills_dir = root_path / "skills"
-    example_skill_file = skills_dir / "example.md"
+    reminders_skill_file = skills_dir / "reminders.md"
 
     # Create AGENTS.md
     if not agents_file.exists():
@@ -41,15 +55,15 @@ def init_workspace(cwd: str):
     else:
         console.print(f"[yellow]Skipped[/yellow] {agents_file.name} (already exists)")
 
-    # Create skills directory and example skill
+    # Create skills directory and reminders skill
     if not skills_dir.exists():
         skills_dir.mkdir()
         console.print(f"[green]Created[/green] skills/ directory")
     
-    if not example_skill_file.exists():
-        example_skill_file.write_text(DEFAULT_SKILL_MD, encoding="utf-8")
-        console.print(f"[green]Created[/green] {example_skill_file.relative_to(root_path)}")
+    if not reminders_skill_file.exists():
+        reminders_skill_file.write_text(DEFAULT_SKILL_MD, encoding="utf-8")
+        console.print(f"[green]Created[/green] {reminders_skill_file.relative_to(root_path)}")
     else:
-        console.print(f"[yellow]Skipped[/yellow] {example_skill_file.relative_to(root_path)} (already exists)")
+        console.print(f"[yellow]Skipped[/yellow] {reminders_skill_file.relative_to(root_path)} (already exists)")
         
     console.print("\n[bold cyan]mnemo8 workspace initialized successfully![/bold cyan]")
