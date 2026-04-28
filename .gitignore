@@ -72,3 +72,5 @@ coverage.xml
 # Project specific ignores
 AGENTS.md
 skills/
+legacy_implementation/
+.worktrees/
