@@ -1,69 +1,80 @@
-import os
+import shutil
 from pathlib import Path
 from rich.console import Console
 
 console = Console()
 
-DEFAULT_AGENTS_MD = """# mnemo8 Agents
-
-## Noctis (Default)
-
-You are Noctis, my locally-running personal assistant. 
-Your primary purpose is to help me organize my thoughts, manage my notes, and navigate the files in this directory.
-
-**Your Identity & Tone:**
-- You are concise, sharp, and highly analytical.
-- You provide practical, direct answers without unnecessary fluff or robotic filler.
-- You act as a reliable sounding board for my ideas and tasks.
-- You prioritize the local context of my files and workflows over generic web knowledge.
-"""
-
-DEFAULT_SKILL_MD = """# Reminder Skill
----
-name: reminder
-description: "Create and manage short reminders, todo items, and calendar events. Use when: add/edit/list/remove reminders. Optimized for small LLMs."
-user-invocable: true
-applyTo: ["**/*"]
-version: "0.1.0"
----
-
-# Reminder Skill
-
-Compact guidance for workspace assistants focused on organization tasks (reminders, todos, short calendar events). Keep prompts and outputs minimal for small models.
-
-Usage:
-- Trigger with: "add reminder", "list reminders", "create event"
-- Response style: one-line confirmation plus concise bullet details
-- Follow-ups: ask only if the time/date or recipient is ambiguous
-
-Example:
-- Add: "Add reminder: Pay rent tomorrow 9am"
-    - Reply: "Reminder added — Pay rent — Tomorrow 09:00"
-"""
 
 def init_workspace(cwd: str):
-    """Initializes the current directory with default mnemo8 files."""
-    root_path = Path(cwd)
-    agents_file = root_path / "AGENTS.md"
-    skills_dir = root_path / "skills"
-    reminders_skill_file = skills_dir / "reminders.md"
+    """Initializes the user's ~/.mnemo8 directory from the repository `boilerplate/`.
 
-    # Create AGENTS.md
-    if not agents_file.exists():
-        agents_file.write_text(DEFAULT_AGENTS_MD, encoding="utf-8")
-        console.print(f"[green]Created[/green] {agents_file.name}")
-    else:
-        console.print(f"[yellow]Skipped[/yellow] {agents_file.name} (already exists)")
+    `cwd` should be the repository root (where `boilerplate/` lives).
+    """
+    repo_root = Path(cwd)
+    boilerplate_dir = repo_root / "boilerplate"
+    mnemo_home = Path.home() / ".mnemo8"
 
-    # Create skills directory and reminders skill
-    if not skills_dir.exists():
-        skills_dir.mkdir()
-        console.print(f"[green]Created[/green] skills/ directory")
-    
-    if not reminders_skill_file.exists():
-        reminders_skill_file.write_text(DEFAULT_SKILL_MD, encoding="utf-8")
-        console.print(f"[green]Created[/green] {reminders_skill_file.relative_to(root_path)}")
+    # Ensure ~/.mnemo8 exists
+    if not mnemo_home.exists():
+        mnemo_home.mkdir(parents=True)
+        console.print(f"[green]Created[/green] {mnemo_home}")
     else:
-        console.print(f"[yellow]Skipped[/yellow] {reminders_skill_file.relative_to(root_path)} (already exists)")
-        
-    console.print("\n[bold cyan]mnemo8 workspace initialized successfully![/bold cyan]")
+        console.print(f"[yellow]Using existing[/yellow] {mnemo_home}")
+
+    # Copy AGENTS.md
+    agents_src = boilerplate_dir / "AGENTS.md"
+    agents_dest = mnemo_home / "AGENTS.md"
+    if agents_dest.exists():
+        console.print(f"[yellow]Skipped[/yellow] {agents_dest.name} (already exists)")
+    else:
+        if agents_src.is_file():
+            shutil.copy2(agents_src, agents_dest)
+            console.print(
+                f"[green]Copied[/green] {agents_src.relative_to(repo_root)} -> {agents_dest}"
+            )
+        else:
+            console.print(f"[red]Boilerplate AGENTS.md not found at {agents_src}[/red]")
+
+    # Copy scripts/
+    scripts_src = boilerplate_dir / "scripts"
+    scripts_dest = mnemo_home / "scripts"
+    if scripts_src.is_dir():
+        scripts_dest.mkdir(exist_ok=True)
+        for src in scripts_src.glob("*.py"):
+            dest = scripts_dest / src.name
+            if dest.exists():
+                console.print(
+                    f"[yellow]Skipped[/yellow] {dest.relative_to(mnemo_home)} (already exists)"
+                )
+            else:
+                shutil.copy2(src, dest)
+                console.print(
+                    f"[green]Copied[/green] {src.relative_to(repo_root)} -> {dest.relative_to(mnemo_home)}"
+                )
+    else:
+        console.print(
+            f"[yellow]No boilerplate scripts/ directory found at {scripts_src}[/yellow]"
+        )
+
+    # Copy skills/
+    skills_src = boilerplate_dir / "skills"
+    skills_dest = mnemo_home / "skills"
+    if skills_src.is_dir():
+        skills_dest.mkdir(exist_ok=True)
+        for src in skills_src.rglob("*.md"):
+            dest = skills_dest / src.name
+            if dest.exists():
+                console.print(
+                    f"[yellow]Skipped[/yellow] {dest.relative_to(mnemo_home)} (already exists)"
+                )
+            else:
+                shutil.copy2(src, dest)
+                console.print(
+                    f"[green]Copied[/green] {src.relative_to(repo_root)} -> {dest.relative_to(mnemo_home)}"
+                )
+    else:
+        console.print(
+            f"[yellow]No boilerplate skills/ directory found at {skills_src}[/yellow]"
+        )
+
+    console.print("\n[bold cyan]mnemo8 ~/.mnemo8 initialized successfully![/bold cyan]")

@@ -1,6 +1,7 @@
 import os
 import sys
 import argparse
+from pathlib import Path
 
 from mnemo8.loader import load_agents, load_skills
 from mnemo8.models import RuntimeState
@@ -23,12 +24,17 @@ def run():
         init_workspace(cwd)
         return
 
+    mnemo_home = Path.home() / ".mnemo8"
+    if not mnemo_home.is_dir():
+        print("~/.mnemo8 not found. Please run 'mnemo8 init' first.", file=sys.stderr)
+        sys.exit(1)
+
     try:
         # Step 2: Search for AGENTS.md
-        agents_content = load_agents(cwd)
+        agents_content = load_agents()
         
         # Step 3: Search for skills/
-        skills = load_skills(cwd)
+        skills = load_skills()
         
         # Step 4: Initialize RuntimeState
         state = RuntimeState(
