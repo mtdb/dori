@@ -70,7 +70,5 @@ coverage.xml
 *.whl
 
 # Project specific ignores
-AGENTS.md
-skills/
 .worktrees/
 docs/plans/
