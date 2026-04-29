@@ -3,8 +3,12 @@ import os
 import json
 import re
 import subprocess
+import termios
+import tty
+from prompt_toolkit import prompt as pt_prompt
+from prompt_toolkit.formatted_text import ANSI
+from prompt_toolkit.history import InMemoryHistory
 from rich.console import Console
-from rich.prompt import Prompt
 from rich.panel import Panel
 from rich.markdown import Markdown
 
@@ -14,11 +18,42 @@ from mnemo8.models import RuntimeState
 
 console = Console()
 
+RETRY_COMMANDS = {"retry", "/retry"}
+
+
+def get_cursor_row() -> int | None:
+    """Query the terminal for the current cursor row (1-indexed)."""
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+        tty.setraw(fd)
+        sys.stdout.write("\033[6n")
+        sys.stdout.flush()
+        response = ""
+        while True:
+            ch = sys.stdin.read(1)
+            response += ch
+            if ch == "R":
+                break
+    finally:
+        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    m = re.match(r"\033\[(\d+);\d+R", response)
+    return int(m.group(1)) if m else None
+
+
+def resolve_input(
+    user_input: str, last_instruction: str | None
+) -> tuple[str | None, str | None]:
+    if user_input.strip().lower() in RETRY_COMMANDS:
+        return last_instruction, last_instruction
+    stripped = user_input.strip()
+    return stripped, stripped
+
 
 def build_system_prompt(state: RuntimeState) -> str:
     prompt = "You are mnemo8, a helpful personal assistant CLI running on the user's terminal.\n"
     if state.agents_content:
-        prompt += f"\nHere is information about available agents that might be relevant:\n{state.agents_content}\n"
+        prompt += f"\nHere is information about your agent configuration:\n{state.agents_content}\n"
     if state.skills:
         prompt += "\nHere are your available skills that you should be aware of:\n"
         prompt += "IMPORTANT: If the user asks you to perform an action that matches an available skill, you MUST output a JSON code block with the exact arguments required by the skill.\n"
@@ -43,12 +78,16 @@ def start_chat(state: RuntimeState):
 
     system_prompt = build_system_prompt(state)
     messages = [{"role": "system", "content": system_prompt}]
+    last_instruction: str | None = None
+    retry_row: int | None = None
+    history = InMemoryHistory()
 
     # REPL Loop
     while True:
         try:
             # User input
-            user_input = Prompt.ask("[bold green]You[/bold green]")
+            current_row = get_cursor_row()
+            user_input = pt_prompt(ANSI("\033[1;32mYou\033[0m: "), history=history)
 
             # Check for exit commands
             if user_input.strip().lower() in ["exit", "quit"]:
@@ -57,6 +96,25 @@ def start_chat(state: RuntimeState):
 
             if not user_input.strip():
                 continue
+
+            resolved, last_instruction = resolve_input(user_input, last_instruction)
+            if resolved is None:
+                console.print("[yellow]No previous instruction to retry.[/yellow]")
+                continue
+            if resolved != user_input.strip():
+                if retry_row is not None:
+                    sys.stdout.write(f"\033[{retry_row};1H\033[J")
+                    sys.stdout.flush()
+                if (
+                    len(messages) >= 3
+                    and messages[-1]["role"] == "assistant"
+                    and messages[-2]["role"] == "user"
+                ):
+                    messages.pop()
+                    messages.pop()
+            else:
+                retry_row = current_row
+            user_input = resolved
 
             messages.append({"role": "user", "content": user_input})
 
