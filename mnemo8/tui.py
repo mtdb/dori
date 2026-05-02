@@ -101,3 +101,58 @@ class NemoInput(Input):
             self.app.cycle_input_history(direction)  # type: ignore[attr-defined]
             event.prevent_default()
             event.stop()
+
+
+class NemoApp(App):
+    CSS_PATH = "tui.tcss"
+
+    def __init__(self, state: RuntimeState) -> None:
+        self._state = state
+        self._history: list[str] = []
+        self._history_idx: int = -1
+        self._last_user_input: str | None = None
+        self._messages: list[dict] = [
+            {"role": "system", "content": _build_system_prompt(state)}
+        ]
+        super().__init__()
+
+    def compose(self) -> ComposeResult:
+        yield Horizontal(
+            Static("◆ Nemo", id="header-left"),
+            Static(
+                f"llama3.1:8b · {len(self._state.skills)} skills",
+                id="header-right",
+            ),
+            id="header",
+        )
+        yield MessageList()
+        yield Horizontal(
+            Static("❯", id="prompt-label"),
+            NemoInput(placeholder="Type a message…"),
+            id="input-bar",
+        )
+        yield Static(id="footer")
+
+    def on_mount(self) -> None:
+        footer = self.query_one("#footer", Static)
+        text = Text()
+        text.append("[ctrl+c]", style="#6fc3df")
+        text.append(" exit  ", style="#444444")
+        text.append("[↑↓]", style="#f38518")
+        text.append(" history  ", style="#444444")
+        text.append("[/retry]", style="#6fc3df")
+        text.append(" retry", style="#444444")
+        footer.update(text)
+        self.query_one(NemoInput).focus()
+
+    def cycle_input_history(self, direction: int) -> None:
+        self._history_idx, value = cycle_history(
+            self._history, self._history_idx, direction
+        )
+        inp = self.query_one(NemoInput)
+        inp.value = value
+        inp.cursor_position = len(value)
+
+
+def start_tui(state: RuntimeState) -> None:
+    NemoApp(state).run()
