@@ -15,3 +15,4 @@ class RuntimeState:
     agents_content: Optional[str] = None
     skills: List[Skill] = field(default_factory=list)
     chat_history: List[str] = field(default_factory=list)
+    model: str = "llama3.1:8b"

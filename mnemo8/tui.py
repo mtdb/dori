@@ -16,6 +16,10 @@ from textual.widgets import Input, Static
 
 from mnemo8.models import RuntimeState
 
+COLOR_USER = "#6fc3df"
+COLOR_NEMO = "#f38518"
+COLOR_THINKING = "#555555"
+
 
 def _parse_skill(content: str) -> dict | None:
     parsed = None
@@ -90,11 +94,11 @@ class MessageWidget(Static):
     def render(self) -> Text:
         if self._role == "user":
             return Text.assemble(
-                Text("You\n", style="bold #6fc3df"),
+                Text("You\n", style=f"bold {COLOR_USER}"),
                 Text(self._content),
             )
         return Text.assemble(
-            Text("Nemo\n", style="bold #f38518"),
+            Text("Nemo\n", style=f"bold {COLOR_NEMO}"),
             Text.from_markup(self._content),
         )
 
@@ -102,8 +106,8 @@ class MessageWidget(Static):
 class ThinkingWidget(Static):
     def render(self) -> Text:
         text = Text()
-        text.append("Nemo\n", style="bold #f38518")
-        text.append("⠸ thinking…", style="#555555")
+        text.append("Nemo\n", style=f"bold {COLOR_NEMO}")
+        text.append("⠸ thinking…", style=COLOR_THINKING)
         return text
 
 
@@ -137,7 +141,7 @@ class NemoApp(App):
         yield Horizontal(
             Static("◆ Nemo", id="header-left"),
             Static(
-                f"llama3.1:8b · {len(self._state.skills)} skills",
+                f"{self._state.model} · {len(self._state.skills)} skills",
                 id="header-right",
             ),
             id="header",
@@ -153,11 +157,11 @@ class NemoApp(App):
     def on_mount(self) -> None:
         footer = self.query_one("#footer", Static)
         text = Text()
-        text.append("[ctrl+c]", style="#6fc3df")
+        text.append("[ctrl+c]", style=COLOR_USER)
         text.append(" exit  ", style="#444444")
-        text.append("[↑↓]", style="#f38518")
+        text.append("[↑↓]", style=COLOR_NEMO)
         text.append(" history  ", style="#444444")
-        text.append("[/retry]", style="#6fc3df")
+        text.append("[/retry]", style=COLOR_USER)
         text.append(" retry", style="#444444")
         footer.update(text)
         self.query_one(NemoInput).focus()
@@ -172,29 +176,31 @@ class NemoApp(App):
 
     async def _send_message(self, user_input: str) -> None:
         msg_list = self.query_one(MessageList)
-        await msg_list.mount(MessageWidget("user", user_input))
+        msg_list.mount(MessageWidget("user", user_input))
         thinking = ThinkingWidget()
-        await msg_list.mount(thinking)
-        msg_list.scroll_end(animate=False)
-
+        msg_list.mount(thinking)
         self._messages.append({"role": "user", "content": user_input})
-
-        response = await asyncio.to_thread(
-            ollama.chat, model="llama3.1:8b", messages=self._messages
-        )
-        assistant_content = response["message"]["content"]
-        self._messages.append({"role": "assistant", "content": assistant_content})
-
-        await thinking.remove()
-        await self._mount_nemo_response(msg_list, assistant_content)
-        msg_list.scroll_end(animate=False)
+        msg_list.scroll_end()
+        try:
+            response = await asyncio.to_thread(
+                ollama.chat, model=self._state.model, messages=self._messages
+            )
+            await thinking.remove()
+            content = response["message"]["content"]
+            self._messages.append({"role": "assistant", "content": content})
+            await self._mount_nemo_response(msg_list, content)
+        except Exception as e:
+            await thinking.remove()
+            self._messages.pop()
+            await msg_list.mount(MessageWidget("nemo", f"[red]Error: {e}[/red]"))
+        msg_list.scroll_end()
 
     async def _mount_nemo_response(self, msg_list: MessageList, content: str) -> None:
         skill_json = _parse_skill(content)
         if skill_json:
             skill_name = skill_json["skill"]
-            skill_output = _run_skill(skill_name, skill_json)
-            display = f"[#6fc3df]✓ {skill_name}[/]\n{content}"
+            skill_output = await asyncio.to_thread(_run_skill, skill_name, skill_json)
+            display = f"[{COLOR_USER}]✓ {skill_name}[/]\n{content}"
             if skill_output:
                 display += f"\n{skill_output}"
         else:
@@ -207,7 +213,7 @@ class NemoApp(App):
             return
         self.query_one(NemoInput).value = ""
 
-        if user_input.lower() in ("/retry", "retry"):
+        if user_input.lower() == "/retry":
             await self._handle_retry()
             return
 
@@ -220,10 +226,12 @@ class NemoApp(App):
         if self._last_user_input is None:
             return
         msg_list = self.query_one(MessageList)
-        children = list(msg_list.children)
-        for widget in children[-2:]:
-            await widget.remove()
-        # Remove the last user+assistant pair from message history
+        to_remove = [
+            w for w in reversed(list(msg_list.children))
+            if isinstance(w, (MessageWidget, ThinkingWidget))
+        ]
+        for w in to_remove[:2]:
+            await w.remove()
         if len(self._messages) >= 3:
             self._messages.pop()
             self._messages.pop()
