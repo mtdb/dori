@@ -21,6 +21,7 @@ from mnemo8.models import RuntimeState
 COLOR_USER = "#6fc3df"
 COLOR_NEMO = "#f38518"
 COLOR_THINKING = "#555555"
+AGENT_DISPLAY_NAME = "Dori"
 
 
 def _is_standalone_skill_payload(content: str) -> bool:
@@ -29,9 +30,7 @@ def _is_standalone_skill_payload(content: str) -> bool:
         return False
     if stripped.startswith("{") and stripped.endswith("}"):
         return True
-    return bool(
-        re.fullmatch(r"```(?:json)?\s*\{.*?\}\s*```", stripped, re.DOTALL)
-    )
+    return bool(re.fullmatch(r"```(?:json)?\s*\{.*?\}\s*```", stripped, re.DOTALL))
 
 
 def _extract_skill_payload(content: str) -> dict | None:
@@ -58,7 +57,9 @@ def _extract_skill_payload(content: str) -> dict | None:
             return None
         confidence_value = 1.0
     else:
-        if isinstance(confidence, bool) or not isinstance(confidence, (int, float, str)):
+        if isinstance(confidence, bool) or not isinstance(
+            confidence, (int, float, str)
+        ):
             return None
         try:
             confidence_value = float(confidence)
@@ -198,7 +199,7 @@ class MessageWidget(Static):
                 Text(self._content),
             )
         return Text.assemble(
-            Text("Nemo\n", style=f"bold {COLOR_NEMO}"),
+            Text(f"{AGENT_DISPLAY_NAME}\n", style=f"bold {COLOR_NEMO}"),
             Text.from_markup(self._content),
         )
 
@@ -219,7 +220,7 @@ class ThinkingWidget(Static):
 
     def render(self) -> Text:
         text = Text()
-        text.append("Nemo\n", style=f"bold {COLOR_NEMO}")
+        text.append(f"{AGENT_DISPLAY_NAME}\n", style=f"bold {COLOR_NEMO}")
         text.append(
             f"{self.FRAMES[self._frame_index]} thinking…",
             style=COLOR_THINKING,
@@ -236,7 +237,7 @@ def _build_chat_transcript(widgets: list[Widget]) -> str:
     for widget in widgets:
         if not isinstance(widget, MessageWidget):
             continue
-        speaker = "You" if widget._role == "user" else "Nemo"
+        speaker = "You" if widget._role == "user" else AGENT_DISPLAY_NAME
         lines.append(f"{speaker}\n{widget._content}")
     return "\n\n".join(lines)
 
@@ -270,7 +271,7 @@ class NemoApp(App):
 
     def compose(self) -> ComposeResult:
         yield Horizontal(
-            Static("◆ Nemo", id="header-left"),
+            Static(f"◆ {AGENT_DISPLAY_NAME}", id="header-left"),
             Static(_build_header_status(self._state), id="header-right"),
             id="header",
         )
@@ -414,10 +415,10 @@ class NemoApp(App):
         msg_list = self.query_one(MessageList)
         transcript = _build_chat_transcript(list(msg_list.children))
         if not transcript:
-            self.notify("No chat to copy", title="Nemo", severity="warning")
+            self.notify("No chat to copy", title=AGENT_DISPLAY_NAME, severity="warning")
             return
         _write_clipboard(transcript)
-        self.notify("Chat copied to clipboard", title="Nemo", timeout=1.5)
+        self.notify("Chat copied to clipboard", title=AGENT_DISPLAY_NAME, timeout=1.5)
 
 
 def start_tui(state: RuntimeState) -> None:

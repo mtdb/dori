@@ -43,7 +43,10 @@ def test_parse_skill_missing_confidence_uses_legacy_standalone_json():
 
 
 def test_parse_skill_missing_confidence_with_prose_is_ignored():
-    assert _parse_skill('Claro:\n```json\n{"skill": "reminders", "time": "9am"}\n```') is None
+    assert (
+        _parse_skill('Claro:\n```json\n{"skill": "reminders", "time": "9am"}\n```')
+        is None
+    )
 
 
 def test_parse_skill_below_threshold_is_ignored():
@@ -121,9 +124,9 @@ def test_build_system_prompt_includes_skill_content():
 
 
 def test_build_system_prompt_includes_agents_content():
-    state = RuntimeState(cwd="/tmp", agents_content="You are Nemo.")
+    state = RuntimeState(cwd="/tmp", agents_content="You are Dori.")
     prompt = _build_system_prompt(state)
-    assert "You are Nemo." in prompt
+    assert "You are Dori." in prompt
 
 
 def test_build_system_prompt_no_skills_omits_skill_section():
@@ -166,7 +169,7 @@ def test_build_chat_transcript_uses_visible_messages_only():
         ]
     )
 
-    assert transcript == "You\nhello\n\nNemo\nhi there"
+    assert transcript == "You\nhello\n\nDori\nhi there"
 
 
 def test_mount_nemo_response_executes_high_confidence_skill_without_json(monkeypatch):
@@ -207,7 +210,9 @@ def test_mount_nemo_response_executes_legacy_standalone_json(monkeypatch):
         async def mount(self, widget):
             self.children.append(widget)
 
-    monkeypatch.setattr("mnemo8.tui._run_skill", lambda name, payload: "recordatorio creado")
+    monkeypatch.setattr(
+        "mnemo8.tui._run_skill", lambda name, payload: "recordatorio creado"
+    )
 
     import asyncio
 
@@ -346,8 +351,8 @@ def test_action_copy_chat_copies_visible_chat_and_notifies(monkeypatch):
 
     app.action_copy_chat()
 
-    assert copied == ["You\nhello\n\nNemo\nhi there"]
-    assert notifications == [("Chat copied to clipboard", "Nemo", "information")]
+    assert copied == ["You\nhello\n\nDori\nhi there"]
+    assert notifications == [("Chat copied to clipboard", "Dori", "information")]
 
 
 def test_action_copy_chat_warns_when_chat_is_empty(monkeypatch):
@@ -384,21 +389,21 @@ def test_action_copy_chat_warns_when_chat_is_empty(monkeypatch):
     app.action_copy_chat()
 
     assert copied == []
-    assert notifications == [("No chat to copy", "Nemo", "warning")]
+    assert notifications == [("No chat to copy", "Dori", "warning")]
 
 
 def test_thinking_widget_advance_frame_cycles_spinner():
     widget = ThinkingWidget()
 
-    assert widget.render().plain == "Nemo\n⠋ thinking…"
+    assert widget.render().plain == "Dori\n⠋ thinking…"
 
     widget.advance_frame()
-    assert widget.render().plain == "Nemo\n⠙ thinking…"
+    assert widget.render().plain == "Dori\n⠙ thinking…"
 
     for _ in range(len(ThinkingWidget.FRAMES) - 1):
         widget.advance_frame()
 
-    assert widget.render().plain == "Nemo\n⠋ thinking…"
+    assert widget.render().plain == "Dori\n⠋ thinking…"
 
 
 def test_load_available_vram_mib_sums_all_gpus(monkeypatch):
