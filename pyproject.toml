@@ -11,7 +11,7 @@ requires-python = ">=3.11"
 dependencies = [
     "rich>=13.0.0",
     "ollama>=0.2.0",
-    "prompt_toolkit>=3.0.0",
+    "textual>=0.52.0",
 ]
 
 [project.scripts]
