@@ -64,6 +64,23 @@ def _build_system_prompt(state: RuntimeState) -> str:
     return prompt
 
 
+def _run_skill(skill_name: str, skill_json: dict) -> str:
+    mnemo_home = os.path.expanduser("~/.mnemo8")
+    script_path = os.path.join(mnemo_home, "scripts", f"{skill_name}.py")
+    if not os.path.isfile(script_path):
+        return f"[red]Script for skill '{skill_name}' not found[/red]"
+    try:
+        result = subprocess.run(
+            [sys.executable, script_path, json.dumps(skill_json)],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return result.stdout.strip()
+    except subprocess.CalledProcessError as e:
+        return f"[red]{e.stderr.strip()}[/red]"
+
+
 class MessageWidget(Static):
     def __init__(self, role: str, content: str) -> None:
         self._role = role  # "user" or "nemo"
@@ -152,6 +169,37 @@ class NemoApp(App):
         inp = self.query_one(NemoInput)
         inp.value = value
         inp.cursor_position = len(value)
+
+    async def _send_message(self, user_input: str) -> None:
+        msg_list = self.query_one(MessageList)
+        await msg_list.mount(MessageWidget("user", user_input))
+        thinking = ThinkingWidget()
+        await msg_list.mount(thinking)
+        msg_list.scroll_end(animate=False)
+
+        self._messages.append({"role": "user", "content": user_input})
+
+        response = await asyncio.to_thread(
+            ollama.chat, model="llama3.1:8b", messages=self._messages
+        )
+        assistant_content = response["message"]["content"]
+        self._messages.append({"role": "assistant", "content": assistant_content})
+
+        await thinking.remove()
+        await self._mount_nemo_response(msg_list, assistant_content)
+        msg_list.scroll_end(animate=False)
+
+    async def _mount_nemo_response(self, msg_list: MessageList, content: str) -> None:
+        skill_json = _parse_skill(content)
+        if skill_json:
+            skill_name = skill_json["skill"]
+            skill_output = _run_skill(skill_name, skill_json)
+            display = f"[#6fc3df]✓ {skill_name}[/]\n{content}"
+            if skill_output:
+                display += f"\n{skill_output}"
+        else:
+            display = content
+        await msg_list.mount(MessageWidget("nemo", display))
 
 
 def start_tui(state: RuntimeState) -> None:
