@@ -201,6 +201,34 @@ class NemoApp(App):
             display = content
         await msg_list.mount(MessageWidget("nemo", display))
 
+    async def on_input_submitted(self, event: Input.Submitted) -> None:
+        user_input = event.value.strip()
+        if not user_input:
+            return
+        self.query_one(NemoInput).value = ""
+
+        if user_input.lower() in ("/retry", "retry"):
+            await self._handle_retry()
+            return
+
+        self._last_user_input = user_input
+        self._history.append(user_input)
+        self._history_idx = -1
+        await self._send_message(user_input)
+
+    async def _handle_retry(self) -> None:
+        if self._last_user_input is None:
+            return
+        msg_list = self.query_one(MessageList)
+        children = list(msg_list.children)
+        for widget in children[-2:]:
+            await widget.remove()
+        # Remove the last user+assistant pair from message history
+        if len(self._messages) >= 3:
+            self._messages.pop()
+            self._messages.pop()
+        await self._send_message(self._last_user_input)
+
 
 def start_tui(state: RuntimeState) -> None:
     NemoApp(state).run()
