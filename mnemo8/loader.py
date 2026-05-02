@@ -1,4 +1,5 @@
 import os
+import subprocess
 from typing import List, Optional
 from pathlib import Path
 
@@ -48,3 +49,32 @@ def load_skills() -> List[Skill]:
                 print(f"Warning: Could not read {filepath}: {e}")
 
     return skills
+
+
+def load_available_vram_mib() -> Optional[int]:
+    """Return total available GPU VRAM in MiB when detectable via nvidia-smi."""
+    try:
+        result = subprocess.run(
+            [
+                "nvidia-smi",
+                "--query-gpu=memory.free",
+                "--format=csv,noheader,nounits",
+            ],
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return None
+
+    values: List[int] = []
+    for line in result.stdout.splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            values.append(int(stripped))
+        except ValueError:
+            return None
+
+    return sum(values) if values else None

@@ -5,7 +5,7 @@ NemoApp {
 }
 
 #header {
-    height: 1;
+    height: 2;
     background: #000000;
     border-bottom: solid #222222;
 }
@@ -75,7 +75,7 @@ NemoInput {
 }
 
 #footer {
-    height: 1;
+    height: 2;
     background: #000000;
     border-top: solid #111111;
     padding: 0 1;

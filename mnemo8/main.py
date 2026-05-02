@@ -3,7 +3,7 @@ import sys
 import argparse
 from pathlib import Path
 
-from mnemo8.loader import load_agents, load_skills
+from mnemo8.loader import load_agents, load_available_vram_mib, load_skills
 from mnemo8.models import RuntimeState
 from mnemo8.tui import start_tui
 from mnemo8.commands import init_workspace
@@ -15,7 +15,9 @@ def run():
     subparsers = parser.add_subparsers(dest="command")
 
     # Command: init
-    subparsers.add_parser("init", help="Initialize the workspace with default agents and skills")
+    subparsers.add_parser(
+        "init", help="Initialize the workspace with default agents and skills"
+    )
 
     args = parser.parse_args()
     cwd = os.getcwd()
@@ -32,24 +34,27 @@ def run():
     try:
         # Step 2: Search for AGENTS.md
         agents_content = load_agents()
-        
+
         # Step 3: Search for skills/
         skills = load_skills()
-        
+        available_vram_mib = load_available_vram_mib()
+
         # Step 4: Initialize RuntimeState
         state = RuntimeState(
             cwd=cwd,
             agents_content=agents_content,
             skills=skills,
-            chat_history=[]
+            chat_history=[],
+            available_vram_mib=available_vram_mib,
         )
-        
+
         # Step 5: Start TUI interface
         start_tui(state)
-        
+
     except Exception as e:
         print(f"Failed to start mnemo8: {e}", file=sys.stderr)
         sys.exit(1)
+
 
 if __name__ == "__main__":
     run()

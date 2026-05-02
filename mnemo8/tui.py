@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 import json
 import os
 import re
@@ -19,6 +20,22 @@ from mnemo8.models import RuntimeState
 COLOR_USER = "#6fc3df"
 COLOR_NEMO = "#f38518"
 COLOR_THINKING = "#555555"
+
+
+def _format_available_vram(available_vram_mib: int | None) -> str:
+    if available_vram_mib is None:
+        return "VRAM n/a"
+    if available_vram_mib < 1024:
+        return f"{available_vram_mib} MiB VRAM free"
+    return f"{available_vram_mib / 1024:.1f} GiB VRAM free"
+
+
+def _build_header_status(state: RuntimeState) -> str:
+    return (
+        f"{state.model}"
+        f" · {len(state.skills)} skills"
+        f" · {_format_available_vram(state.available_vram_mib)}"
+    )
 
 
 def _parse_skill(content: str) -> dict | None:
@@ -104,10 +121,26 @@ class MessageWidget(Static):
 
 
 class ThinkingWidget(Static):
+    FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+
+    def __init__(self) -> None:
+        self._frame_index = 0
+        super().__init__()
+
+    def on_mount(self) -> None:
+        self.set_interval(0.12, self.advance_frame)
+
+    def advance_frame(self) -> None:
+        self._frame_index = (self._frame_index + 1) % len(self.FRAMES)
+        self.refresh()
+
     def render(self) -> Text:
         text = Text()
         text.append("Nemo\n", style=f"bold {COLOR_NEMO}")
-        text.append("⠸ thinking…", style=COLOR_THINKING)
+        text.append(
+            f"{self.FRAMES[self._frame_index]} thinking…",
+            style=COLOR_THINKING,
+        )
         return text
 
 
@@ -129,9 +162,11 @@ class NemoApp(App):
 
     def __init__(self, state: RuntimeState) -> None:
         self._state = state
+        self._last_ctrl_c_time: float | None = None
         self._history: list[str] = []
         self._history_idx: int = -1
         self._last_user_input: str | None = None
+        self._last_interaction_widgets: list[Static] = []
         self._messages: list[dict] = [
             {"role": "system", "content": _build_system_prompt(state)}
         ]
@@ -140,10 +175,7 @@ class NemoApp(App):
     def compose(self) -> ComposeResult:
         yield Horizontal(
             Static("◆ Nemo", id="header-left"),
-            Static(
-                f"{self._state.model} · {len(self._state.skills)} skills",
-                id="header-right",
-            ),
+            Static(_build_header_status(self._state), id="header-right"),
             id="header",
         )
         yield MessageList()
@@ -158,13 +190,35 @@ class NemoApp(App):
         footer = self.query_one("#footer", Static)
         text = Text()
         text.append("[ctrl+c]", style=COLOR_USER)
+        text.append("[ctrl+c]", style=COLOR_USER)
         text.append(" exit  ", style="#444444")
         text.append("[↑↓]", style=COLOR_NEMO)
         text.append(" history  ", style="#444444")
-        text.append("[/retry]", style=COLOR_USER)
+        text.append("[ctrl+r]", style=COLOR_USER)
         text.append(" retry", style="#444444")
         footer.update(text)
         self.query_one(NemoInput).focus()
+
+    async def on_key(self, event: events.Key) -> None:
+        if event.key == "ctrl+c":
+            now = time.monotonic()
+            last = getattr(self, "_last_ctrl_c_time", None)
+            if last is not None and (now - last) <= 1.5:
+                self.exit()
+            else:
+                self._last_ctrl_c_time = now
+            event.prevent_default()
+            event.stop()
+            return
+        if event.key == "ctrl+d":
+            self.exit()
+            event.prevent_default()
+            event.stop()
+            return
+        if event.key == "ctrl+r":
+            await self._handle_retry()
+            event.prevent_default()
+            event.stop()
 
     def cycle_input_history(self, direction: int) -> None:
         self._history_idx, value = cycle_history(
@@ -176,7 +230,8 @@ class NemoApp(App):
 
     async def _send_message(self, user_input: str) -> None:
         msg_list = self.query_one(MessageList)
-        msg_list.mount(MessageWidget("user", user_input))
+        user_widget = MessageWidget("user", user_input)
+        msg_list.mount(user_widget)
         thinking = ThinkingWidget()
         msg_list.mount(thinking)
         self._messages.append({"role": "user", "content": user_input})
@@ -188,14 +243,19 @@ class NemoApp(App):
             await thinking.remove()
             content = response["message"]["content"]
             self._messages.append({"role": "assistant", "content": content})
-            await self._mount_nemo_response(msg_list, content)
+            response_widget = await self._mount_nemo_response(msg_list, content)
+            self._last_interaction_widgets = [user_widget, response_widget]
         except Exception as e:
             await thinking.remove()
             self._messages.pop()
-            await msg_list.mount(MessageWidget("nemo", f"[red]Error: {e}[/red]"))
+            error_widget = MessageWidget("nemo", f"[red]Error: {e}[/red]")
+            await msg_list.mount(error_widget)
+            self._last_interaction_widgets = [user_widget, error_widget]
         msg_list.scroll_end()
 
-    async def _mount_nemo_response(self, msg_list: MessageList, content: str) -> None:
+    async def _mount_nemo_response(
+        self, msg_list: MessageList, content: str
+    ) -> MessageWidget:
         skill_json = _parse_skill(content)
         if skill_json:
             skill_name = skill_json["skill"]
@@ -205,7 +265,9 @@ class NemoApp(App):
                 display += f"\n{skill_output}"
         else:
             display = content
-        await msg_list.mount(MessageWidget("nemo", display))
+        response_widget = MessageWidget("nemo", display)
+        await msg_list.mount(response_widget)
+        return response_widget
 
     async def on_input_submitted(self, event: Input.Submitted) -> None:
         user_input = event.value.strip()
@@ -213,7 +275,11 @@ class NemoApp(App):
             return
         self.query_one(NemoInput).value = ""
 
-        if user_input.lower() == "/retry":
+        if user_input.lower() in ("/exit", "exit"):
+            self.exit()
+            return
+
+        if user_input.lower() in ("/retry", "retry"):
             await self._handle_retry()
             return
 
@@ -225,16 +291,13 @@ class NemoApp(App):
     async def _handle_retry(self) -> None:
         if self._last_user_input is None:
             return
-        msg_list = self.query_one(MessageList)
-        to_remove = [
-            w for w in reversed(list(msg_list.children))
-            if isinstance(w, (MessageWidget, ThinkingWidget))
-        ]
-        for w in to_remove[:2]:
-            await w.remove()
+        for widget in reversed(self._last_interaction_widgets):
+            await widget.remove()
+        self._last_interaction_widgets = []
         if len(self._messages) >= 3:
             self._messages.pop()
             self._messages.pop()
+        self._history_idx = -1
         await self._send_message(self._last_user_input)
 
 

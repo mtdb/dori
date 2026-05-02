@@ -16,3 +16,4 @@ class RuntimeState:
     skills: List[Skill] = field(default_factory=list)
     chat_history: List[str] = field(default_factory=list)
     model: str = "llama3.1:8b"
+    available_vram_mib: Optional[int] = None

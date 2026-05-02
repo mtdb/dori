@@ -1,0 +1,212 @@
+<h2>Which color scheme feels right?</h2>
+<p class="subtitle">Same layout (A), three different visual personalities.</p>
+
+<style>
+  .tui-cards {
+    display: flex;
+    gap: 20px;
+    margin-top: 24px;
+    flex-wrap: wrap;
+  }
+  .tui-card {
+    flex: 1;
+    min-width: 240px;
+    border: 2px solid #333;
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.2s, box-shadow 0.2s;
+  }
+  .tui-card:hover { border-color: #aaa; box-shadow: 0 0 0 3px rgba(200,200,200,0.15); }
+  .tui-card.selected { border-color: #fff; box-shadow: 0 0 0 4px rgba(255,255,255,0.25); }
+
+  .tui-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #888;
+    padding: 10px 12px 4px;
+    font-family: monospace;
+  }
+  .tui-frame {
+    font-family: 'Cascadia Code', 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 11px;
+  }
+  .tui-msg-user .speaker { font-weight: bold; font-size: 10px; margin-bottom: 2px; }
+  .tui-msg-assistant .speaker { font-weight: bold; font-size: 10px; margin-bottom: 2px; }
+  .tui-messages { padding: 10px; min-height: 130px; display: flex; flex-direction: column; gap: 8px; }
+  .tui-msg-user { padding: 4px 8px; }
+  .tui-msg-assistant { padding: 4px 8px; }
+  .tui-input-area { padding: 6px 10px; display: flex; align-items: center; gap: 6px; }
+  .tui-statusbar { padding: 3px 10px; display: flex; gap: 14px; font-size: 10px; }
+  .tui-topbar { padding: 4px 10px; display: flex; justify-content: space-between; align-items: center; font-size: 10px; }
+  .tui-cursor { display: inline-block; width: 7px; height: 13px; vertical-align: middle; animation: blink 1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .card-desc { padding: 8px 12px 12px; font-size: 11px; border-top: 1px solid #222; }
+  .card-desc strong { display: block; margin-bottom: 3px; }
+
+  /* === Theme A: Ocean / Nemo === */
+  .theme-ocean { background: #0a0e1a; color: #c9d1e0; }
+  .theme-ocean .tui-topbar { background: #0d1626; border-bottom: 1px solid #1e2d4a; color: #4a9eff; }
+  .theme-ocean .tui-topbar-r { color: #3a5a80; }
+  .theme-ocean .tui-msg-user { border-left: 2px solid #4a9eff; }
+  .theme-ocean .tui-msg-user .speaker { color: #4a9eff; }
+  .theme-ocean .tui-msg-assistant { border-left: 2px solid #38bdf8; }
+  .theme-ocean .tui-msg-assistant .speaker { color: #38bdf8; }
+  .theme-ocean .tui-skill { color: #34d399; }
+  .theme-ocean .tui-input-area { background: #090d18; border-top: 1px solid #1e2d4a; }
+  .theme-ocean .tui-prompt { color: #34d399; }
+  .theme-ocean .tui-cursor { background: #c9d1e0; }
+  .theme-ocean .tui-statusbar { background: #0d1626; border-top: 1px solid #1e2d4a; color: #3a5a80; }
+  .theme-ocean .tui-statusbar span { color: #4a9eff; }
+  .theme-ocean-desc { background: #0d1626; color: #8aaac4; }
+  .theme-ocean-desc strong { color: #c9d1e0; }
+
+  /* === Theme B: Tokyo Night === */
+  .theme-tokyo { background: #1a1b2e; color: #c0caf5; }
+  .theme-tokyo .tui-topbar { background: #16161e; border-bottom: 1px solid #292e42; color: #7aa2f7; }
+  .theme-tokyo .tui-topbar-r { color: #414868; }
+  .theme-tokyo .tui-msg-user { border-left: 2px solid #7aa2f7; }
+  .theme-tokyo .tui-msg-user .speaker { color: #7aa2f7; }
+  .theme-tokyo .tui-msg-assistant { border-left: 2px solid #bb9af7; }
+  .theme-tokyo .tui-msg-assistant .speaker { color: #bb9af7; }
+  .theme-tokyo .tui-skill { color: #9ece6a; }
+  .theme-tokyo .tui-input-area { background: #13131f; border-top: 1px solid #292e42; }
+  .theme-tokyo .tui-prompt { color: #9ece6a; }
+  .theme-tokyo .tui-cursor { background: #c0caf5; }
+  .theme-tokyo .tui-statusbar { background: #16161e; border-top: 1px solid #292e42; color: #414868; }
+  .theme-tokyo .tui-statusbar span { color: #7aa2f7; }
+  .theme-tokyo-desc { background: #16161e; color: #565f89; }
+  .theme-tokyo-desc strong { color: #c0caf5; }
+
+  /* === Theme C: Monochrome === */
+  .theme-mono { background: #111111; color: #cccccc; }
+  .theme-mono .tui-topbar { background: #0c0c0c; border-bottom: 1px solid #2a2a2a; color: #eeeeee; }
+  .theme-mono .tui-topbar-r { color: #444; }
+  .theme-mono .tui-msg-user { border-left: 2px solid #888; }
+  .theme-mono .tui-msg-user .speaker { color: #fff; }
+  .theme-mono .tui-msg-assistant { border-left: 2px solid #555; }
+  .theme-mono .tui-msg-assistant .speaker { color: #bbb; }
+  .theme-mono .tui-skill { color: #aaa; }
+  .theme-mono .tui-input-area { background: #0c0c0c; border-top: 1px solid #2a2a2a; }
+  .theme-mono .tui-prompt { color: #fff; }
+  .theme-mono .tui-cursor { background: #fff; }
+  .theme-mono .tui-statusbar { background: #0c0c0c; border-top: 1px solid #2a2a2a; color: #444; }
+  .theme-mono .tui-statusbar span { color: #aaa; }
+  .theme-mono-desc { background: #0c0c0c; color: #666; }
+  .theme-mono-desc strong { color: #ccc; }
+</style>
+
+<div class="tui-cards">
+
+  <!-- A: Ocean / Nemo -->
+  <div class="tui-card" data-choice="ocean" onclick="toggleSelect(this)">
+    <div class="tui-label" style="background:#0a0e1a;color:#3a5a80;">A</div>
+    <div class="tui-frame theme-ocean">
+      <div class="tui-topbar">
+        <span>◆ Nemo</span>
+        <span class="tui-topbar-r">llama3.1:8b · 3 skills</span>
+      </div>
+      <div class="tui-messages">
+        <div class="tui-msg-user">
+          <div class="speaker">You</div>
+          Check my calendar for today
+        </div>
+        <div class="tui-msg-assistant">
+          <div class="speaker">Nemo</div>
+          <span class="tui-skill">✓ calendar</span> — 2 events found.<br>
+          If I'm not mistaken, you're free after 3pm.
+        </div>
+      </div>
+      <div class="tui-input-area">
+        <span class="tui-prompt">❯</span>
+        <span style="color:#2a4060;">Type a message…</span>
+        <span class="tui-cursor"></span>
+      </div>
+      <div class="tui-statusbar">
+        <span>[ctrl+c]</span> exit &nbsp;<span>[↑]</span> history
+      </div>
+    </div>
+    <div class="card-desc theme-ocean-desc">
+      <strong>Ocean — deep blues and teals</strong>
+      Fits the "Nemo" name. Cool, calm, distinct from typical green-terminal tools.
+    </div>
+  </div>
+
+  <!-- B: Tokyo Night -->
+  <div class="tui-card" data-choice="tokyo" onclick="toggleSelect(this)">
+    <div class="tui-label" style="background:#1a1b2e;color:#414868;">B</div>
+    <div class="tui-frame theme-tokyo">
+      <div class="tui-topbar">
+        <span>◆ Nemo</span>
+        <span class="tui-topbar-r">llama3.1:8b · 3 skills</span>
+      </div>
+      <div class="tui-messages">
+        <div class="tui-msg-user">
+          <div class="speaker">You</div>
+          Check my calendar for today
+        </div>
+        <div class="tui-msg-assistant">
+          <div class="speaker">Nemo</div>
+          <span class="tui-skill">✓ calendar</span> — 2 events found.<br>
+          If I'm not mistaken, you're free after 3pm.
+        </div>
+      </div>
+      <div class="tui-input-area">
+        <span class="tui-prompt">❯</span>
+        <span style="color:#292e42;">Type a message…</span>
+        <span class="tui-cursor"></span>
+      </div>
+      <div class="tui-statusbar">
+        <span>[ctrl+c]</span> exit &nbsp;<span>[↑]</span> history
+      </div>
+    </div>
+    <div class="card-desc theme-tokyo-desc">
+      <strong>Tokyo Night — blue-purples</strong>
+      Very popular dev palette. Blue for user, purple for Nemo. Familiar to developers.
+    </div>
+  </div>
+
+  <!-- C: Monochrome -->
+  <div class="tui-card" data-choice="mono" onclick="toggleSelect(this)">
+    <div class="tui-label" style="background:#111;color:#444;">C</div>
+    <div class="tui-frame theme-mono">
+      <div class="tui-topbar">
+        <span>◆ Nemo</span>
+        <span class="tui-topbar-r">llama3.1:8b · 3 skills</span>
+      </div>
+      <div class="tui-messages">
+        <div class="tui-msg-user">
+          <div class="speaker">You</div>
+          Check my calendar for today
+        </div>
+        <div class="tui-msg-assistant">
+          <div class="speaker">Nemo</div>
+          <span class="tui-skill">✓ calendar</span> — 2 events found.<br>
+          If I'm not mistaken, you're free after 3pm.
+        </div>
+      </div>
+      <div class="tui-input-area">
+        <span class="tui-prompt">❯</span>
+        <span style="color:#333;">Type a message…</span>
+        <span class="tui-cursor"></span>
+      </div>
+      <div class="tui-statusbar">
+        <span>[ctrl+c]</span> exit &nbsp;<span>[↑]</span> history
+      </div>
+    </div>
+    <div class="card-desc theme-mono-desc">
+      <strong>Monochrome — pure black and white</strong>
+      Minimal, terminal-native. Looks great on any terminal color scheme. Zero personality, maximum focus.
+    </div>
+  </div>
+
+</div>
+
+<script>
+function toggleSelect(el) {
+  document.querySelectorAll('.tui-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+}
+</script>
