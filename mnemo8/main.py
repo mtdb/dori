@@ -5,7 +5,7 @@ from pathlib import Path
 
 from mnemo8.loader import load_agents, load_skills
 from mnemo8.models import RuntimeState
-from mnemo8.chat import start_chat
+from mnemo8.tui import start_tui
 from mnemo8.commands import init_workspace
 
 
@@ -44,8 +44,8 @@ def run():
             chat_history=[]
         )
         
-        # Step 5: Start chat interface
-        start_chat(state)
+        # Step 5: Start TUI interface
+        start_tui(state)
         
     except Exception as e:
         print(f"Failed to start mnemo8: {e}", file=sys.stderr)
