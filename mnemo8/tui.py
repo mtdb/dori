@@ -62,3 +62,42 @@ def _build_system_prompt(state: RuntimeState) -> str:
         for skill in state.skills:
             prompt += f"\n--- Skill: {skill.name} ---\n{skill.content}\n"
     return prompt
+
+
+class MessageWidget(Static):
+    def __init__(self, role: str, content: str) -> None:
+        self._role = role  # "user" or "nemo"
+        self._content = content
+        super().__init__(classes=role)
+
+    def render(self) -> Text:
+        if self._role == "user":
+            return Text.assemble(
+                Text("You\n", style="bold #6fc3df"),
+                Text(self._content),
+            )
+        return Text.assemble(
+            Text("Nemo\n", style="bold #f38518"),
+            Text.from_markup(self._content),
+        )
+
+
+class ThinkingWidget(Static):
+    def render(self) -> Text:
+        text = Text()
+        text.append("Nemo\n", style="bold #f38518")
+        text.append("⠸ thinking…", style="#555555")
+        return text
+
+
+class MessageList(ScrollableContainer):
+    pass
+
+
+class NemoInput(Input):
+    async def on_key(self, event: events.Key) -> None:
+        if event.key in ("up", "down"):
+            direction = -1 if event.key == "up" else 1
+            self.app.cycle_input_history(direction)  # type: ignore[attr-defined]
+            event.prevent_default()
+            event.stop()
