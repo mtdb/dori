@@ -2,11 +2,14 @@ import pytest
 from mnemo8.loader import load_available_vram_mib
 from mnemo8.tui import (
     ThinkingWidget,
+    MessageWidget,
     _build_header_status,
+    _build_chat_transcript,
     _build_system_prompt,
     _format_available_vram,
     _parse_skill,
     cycle_history,
+    NemoApp,
 )
 from mnemo8.models import RuntimeState, Skill
 
@@ -130,6 +133,126 @@ def test_build_header_status_includes_model_skills_and_vram():
     )
 
     assert _build_header_status(state) == "qwen3:8b · 1 skills · 6.0 GiB VRAM free"
+
+
+def test_build_chat_transcript_uses_visible_messages_only():
+    transcript = _build_chat_transcript(
+        [
+            MessageWidget("user", "hello"),
+            ThinkingWidget(),
+            MessageWidget("nemo", "hi there"),
+        ]
+    )
+
+    assert transcript == "You\nhello\n\nNemo\nhi there"
+
+
+def test_clear_command_resets_chat_but_keeps_input_history():
+    state = RuntimeState(cwd="/tmp")
+    app = NemoApp(state)
+    original_prompt = _build_system_prompt(state)
+    app._messages = [
+        {"role": "system", "content": original_prompt},
+        {"role": "user", "content": "hello"},
+        {"role": "assistant", "content": "hi"},
+    ]
+    app._history = ["first", "second"]
+    app._history_idx = 1
+    app._last_user_input = "hello"
+    app._last_interaction_widgets = []
+
+    class DummyMessageList:
+        def __init__(self) -> None:
+            self.children = []
+
+    app.query_one = lambda *args, **kwargs: DummyMessageList()  # type: ignore[method-assign]
+
+    import asyncio
+
+    asyncio.run(app._handle_clear())
+
+    assert app._messages == [{"role": "system", "content": original_prompt}]
+    assert app._last_user_input is None
+    assert app._last_interaction_widgets == []
+    assert app._history == ["first", "second"]
+    assert app._history_idx == -1
+
+
+def test_action_copy_chat_copies_visible_chat_and_notifies(monkeypatch):
+    state = RuntimeState(cwd="/tmp")
+    app = NemoApp(state)
+
+    class DummyMessageList:
+        def __init__(self) -> None:
+            self.children = [
+                MessageWidget("user", "hello"),
+                MessageWidget("nemo", "hi there"),
+            ]
+
+    copied: list[str] = []
+    notifications: list[tuple[str, str, str | None]] = []
+
+    def fake_query_one(*args, **kwargs):
+        return DummyMessageList()
+
+    def fake_write_clipboard(value: str) -> None:
+        copied.append(value)
+
+    def fake_notify(
+        message: str,
+        *,
+        title: str = "",
+        severity: str = "information",
+        timeout: float | None = None,
+        markup: bool = True,
+    ) -> None:
+        notifications.append((message, title, severity))
+
+    monkeypatch.setattr(app, "query_one", fake_query_one)
+    monkeypatch.setattr("mnemo8.tui._write_clipboard", fake_write_clipboard)
+    monkeypatch.setattr(app, "notify", fake_notify)
+
+    app.action_copy_chat()
+
+    assert copied == ["You\nhello\n\nNemo\nhi there"]
+    assert notifications == [("Chat copied to clipboard", "Nemo", "information")]
+
+
+def test_action_copy_chat_warns_when_chat_is_empty(monkeypatch):
+    state = RuntimeState(cwd="/tmp")
+    app = NemoApp(state)
+
+    class DummyMessageList:
+        def __init__(self) -> None:
+            self.children = []
+
+    copied: list[str] = []
+    notifications: list[tuple[str, str, str | None]] = []
+
+    def fake_query_one(*args, **kwargs):
+        return DummyMessageList()
+
+    def fake_write_clipboard(value: str) -> None:
+        copied.append(value)
+
+    def fake_notify(
+        message: str,
+        *,
+        title: str = "",
+        severity: str = "information",
+        timeout: float | None = None,
+        markup: bool = True,
+    ) -> None:
+        notifications.append((message, title, severity))
+
+    monkeypatch.setattr(app, "query_one", fake_query_one)
+    monkeypatch.setattr("mnemo8.tui._write_clipboard", fake_write_clipboard)
+    monkeypatch.setattr(app, "notify", fake_notify)
+
+    app.action_copy_chat()
+
+    assert copied == []
+    assert notifications == [("No chat to copy", "Nemo", "warning")]
 
 
 def test_thinking_widget_advance_frame_cycles_spinner():

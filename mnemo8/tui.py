@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import time
 import json
 import os
 import re
@@ -12,7 +11,9 @@ import ollama
 from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer
+from textual.widget import Widget
 from textual.widgets import Input, Static
 
 from mnemo8.models import RuntimeState
@@ -102,6 +103,29 @@ def _run_skill(skill_name: str, skill_json: dict) -> str:
         return f"[red]{e.stderr.strip()}[/red]"
 
 
+def _write_clipboard(text: str) -> None:
+    # OSC 52 (Textual's built-in) is unreliable on most Linux terminals;
+    # prefer native clipboard tools when available.
+    if os.environ.get("WAYLAND_DISPLAY"):
+        cmd = ["wl-copy"]
+    elif os.environ.get("DISPLAY"):
+        cmd = ["xclip", "-selection", "clipboard"]
+    else:
+        cmd = None
+    if cmd:
+        try:
+            subprocess.run(cmd, input=text, text=True, check=True)
+            return
+        except (FileNotFoundError, subprocess.CalledProcessError):
+            pass
+    # fallback: OSC 52 terminal sequence
+    import base64
+
+    encoded = base64.b64encode(text.encode()).decode()
+    sys.stdout.write(f"\x1b]52;c;{encoded}\a")
+    sys.stdout.flush()
+
+
 class MessageWidget(Static):
     def __init__(self, role: str, content: str) -> None:
         self._role = role  # "user" or "nemo"
@@ -148,6 +172,16 @@ class MessageList(ScrollableContainer):
     pass
 
 
+def _build_chat_transcript(widgets: list[Widget]) -> str:
+    lines: list[str] = []
+    for widget in widgets:
+        if not isinstance(widget, MessageWidget):
+            continue
+        speaker = "You" if widget._role == "user" else "Nemo"
+        lines.append(f"{speaker}\n{widget._content}")
+    return "\n\n".join(lines)
+
+
 class NemoInput(Input):
     async def on_key(self, event: events.Key) -> None:
         if event.key in ("up", "down"):
@@ -159,10 +193,13 @@ class NemoInput(Input):
 
 class NemoApp(App):
     CSS_PATH = "tui.tcss"
+    BINDINGS = [
+        Binding("ctrl+c", "copy_chat", show=False, priority=True),
+        Binding("ctrl+d", "close_app", show=False, priority=True),
+    ]
 
     def __init__(self, state: RuntimeState) -> None:
         self._state = state
-        self._last_ctrl_c_time: float | None = None
         self._history: list[str] = []
         self._history_idx: int = -1
         self._last_user_input: str | None = None
@@ -190,35 +227,30 @@ class NemoApp(App):
         footer = self.query_one("#footer", Static)
         text = Text()
         text.append("[ctrl+c]", style=COLOR_USER)
-        text.append("[ctrl+c]", style=COLOR_USER)
-        text.append(" exit  ", style="#444444")
+        text.append(" copy  ", style="#444444")
         text.append("[↑↓]", style=COLOR_NEMO)
         text.append(" history  ", style="#444444")
         text.append("[ctrl+r]", style=COLOR_USER)
         text.append(" retry", style="#444444")
+        text.append("  ", style="#444444")
+        text.append("[/clear]", style=COLOR_USER)
+        text.append(" clear  ", style="#444444")
+        text.append("[ctrl+d]", style=COLOR_NEMO)
+        text.append(" exit", style="#444444")
         footer.update(text)
         self.query_one(NemoInput).focus()
 
     async def on_key(self, event: events.Key) -> None:
-        if event.key == "ctrl+c":
-            now = time.monotonic()
-            last = getattr(self, "_last_ctrl_c_time", None)
-            if last is not None and (now - last) <= 1.5:
-                self.exit()
-            else:
-                self._last_ctrl_c_time = now
-            event.prevent_default()
-            event.stop()
-            return
-        if event.key == "ctrl+d":
-            self.exit()
-            event.prevent_default()
-            event.stop()
-            return
         if event.key == "ctrl+r":
             await self._handle_retry()
             event.prevent_default()
             event.stop()
+
+    def action_copy_chat(self) -> None:
+        self._copy_chat_to_clipboard()
+
+    def action_close_app(self) -> None:
+        self.exit()
 
     def cycle_input_history(self, direction: int) -> None:
         self._history_idx, value = cycle_history(
@@ -283,6 +315,10 @@ class NemoApp(App):
             await self._handle_retry()
             return
 
+        if user_input.lower() in ("/clear", "clear"):
+            await self._handle_clear()
+            return
+
         self._last_user_input = user_input
         self._history.append(user_input)
         self._history_idx = -1
@@ -299,6 +335,26 @@ class NemoApp(App):
             self._messages.pop()
         self._history_idx = -1
         await self._send_message(self._last_user_input)
+
+    async def _handle_clear(self) -> None:
+        msg_list = self.query_one(MessageList)
+        for widget in reversed(msg_list.children):
+            await widget.remove()
+        self._messages = [
+            {"role": "system", "content": _build_system_prompt(self._state)}
+        ]
+        self._last_user_input = None
+        self._last_interaction_widgets = []
+        self._history_idx = -1
+
+    def _copy_chat_to_clipboard(self) -> None:
+        msg_list = self.query_one(MessageList)
+        transcript = _build_chat_transcript(list(msg_list.children))
+        if not transcript:
+            self.notify("No chat to copy", title="Nemo", severity="warning")
+            return
+        _write_clipboard(transcript)
+        self.notify("Chat copied to clipboard", title="Nemo", timeout=1.5)
 
 
 def start_tui(state: RuntimeState) -> None:
