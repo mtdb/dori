@@ -17,5 +17,6 @@ class RuntimeState:
     chat_history: List[str] = field(default_factory=list)
     model: str = "llama3.1:8b"
     available_vram_mib: Optional[int] = None
+    total_vram_mib: Optional[int] = None
     debug: bool = False
     skill_confidence_threshold: float = 0.8

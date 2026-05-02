@@ -1,9 +1,12 @@
 import asyncio
+import math
 import json
 import os
 import re
 import subprocess
 import sys
+import time
+from contextlib import suppress
 
 import ollama
 from rich.text import Text
@@ -14,12 +17,17 @@ from textual.containers import Horizontal, ScrollableContainer
 from textual.widget import Widget
 from textual.widgets import Input, Static
 
+from mnemo8.loader import load_available_vram
 from mnemo8.models import RuntimeState
 
 COLOR_USER = "#6fc3df"
 COLOR_NEMO = "#f38518"
 COLOR_THINKING = "#555555"
 AGENT_DISPLAY_NAME = "Dori"
+VRAM_POLL_BURST_WINDOW_SECONDS = 13.0
+VRAM_POLL_TAU_SECONDS = 60.0
+VRAM_POLL_BUCKETS = (1, 5, 10, 15, 20, 30)
+VRAM_UPDATE_THRESHOLD_MIB = 64
 
 
 def _is_standalone_skill_payload(content: str) -> bool:
@@ -72,20 +80,42 @@ def _extract_skill_payload(content: str) -> dict | None:
     return payload
 
 
-def _format_available_vram(available_vram_mib: int | None) -> str:
-    if available_vram_mib is None:
+def _format_vram_bar(free_mib: int | None, total_mib: int | None) -> str:
+    if free_mib is None or total_mib is None or total_mib == 0:
         return "VRAM n/a"
-    if available_vram_mib < 1024:
-        return f"{available_vram_mib} MiB VRAM free"
-    return f"{available_vram_mib / 1024:.1f} GiB VRAM free"
+
+    used_mib = total_mib - free_mib
+    used_percent = used_mib / total_mib
+
+    bar_length = 10
+    filled = int(used_percent * bar_length)
+    bar = "█" * filled + "░" * (bar_length - filled)
+
+    free_gib = free_mib / 1024
+    if free_gib < 1:
+        return f"[{bar}] {free_mib} MiB free"
+    return f"[{bar}] {free_gib:.1f} GiB free"
 
 
 def _build_header_status(state: RuntimeState) -> str:
     return (
         f"{state.model}"
         f" · {len(state.skills)} skills"
-        f" · {_format_available_vram(state.available_vram_mib)}"
+        f" · {_format_vram_bar(state.available_vram_mib, state.total_vram_mib)}"
     )
+
+
+def compute_vram_poll_interval(idle_seconds: float) -> int:
+    if idle_seconds <= VRAM_POLL_BURST_WINDOW_SECONDS:
+        return VRAM_POLL_BUCKETS[0]
+
+    ramp = 5.0 + 25.0 * (
+        1.0
+        - math.exp(
+            -(idle_seconds - VRAM_POLL_BURST_WINDOW_SECONDS) / VRAM_POLL_TAU_SECONDS
+        )
+    )
+    return min(VRAM_POLL_BUCKETS[1:], key=lambda bucket: (abs(bucket - ramp), bucket))
 
 
 def _parse_skill(content: str, min_confidence: float = 0.0) -> dict | None:
@@ -262,6 +292,9 @@ class NemoApp(App):
         self._history_idx: int = -1
         self._last_user_input: str | None = None
         self._last_interaction_widgets: list[Static] = []
+        self._last_user_activity_monotonic: float | None = None
+        self._vram_poll_wakeup: asyncio.Event | None = None
+        self._vram_poll_task: asyncio.Task[None] | None = None
         self._messages: list[dict] = [
             {"role": "system", "content": _build_system_prompt(state)}
         ]
@@ -297,6 +330,58 @@ class NemoApp(App):
         text.append(" exit", style="#444444")
         footer.update(text)
         self.query_one(NemoInput).focus()
+        self._vram_poll_wakeup = asyncio.Event()
+        self._vram_poll_task = asyncio.create_task(self._poll_vram_header())
+
+    async def on_unmount(self) -> None:
+        if self._vram_poll_task is None:
+            return
+        self._vram_poll_task.cancel()
+        with suppress(asyncio.CancelledError):
+            await self._vram_poll_task
+        self._vram_poll_task = None
+        self._vram_poll_wakeup = None
+
+    def _mark_vram_activity(self) -> None:
+        self._last_user_activity_monotonic = time.monotonic()
+        if self._vram_poll_wakeup is not None:
+            self._vram_poll_wakeup.set()
+
+    async def _refresh_vram_header(self) -> None:
+        free_mib, total_mib = await asyncio.to_thread(load_available_vram)
+        current_free = self._state.available_vram_mib
+        current_total = self._state.total_vram_mib
+        if (
+            free_mib is not None
+            and total_mib is not None
+            and current_free is not None
+            and current_total == total_mib
+            and abs(free_mib - current_free) < VRAM_UPDATE_THRESHOLD_MIB
+        ):
+            return
+        self._state.available_vram_mib = free_mib
+        self._state.total_vram_mib = total_mib
+        header_right = self.query_one("#header-right", Static)
+        header_right.update(_build_header_status(self._state))
+
+    async def _poll_vram_header(self) -> None:
+        assert self._vram_poll_wakeup is not None
+        await self._refresh_vram_header()
+        while True:
+            last_activity = self._last_user_activity_monotonic
+            idle_seconds = (
+                time.monotonic() - last_activity
+                if last_activity is not None
+                else float("inf")
+            )
+            interval = compute_vram_poll_interval(idle_seconds)
+            try:
+                await asyncio.wait_for(self._vram_poll_wakeup.wait(), timeout=interval)
+            except asyncio.TimeoutError:
+                pass
+            else:
+                self._vram_poll_wakeup.clear()
+            await self._refresh_vram_header()
 
     async def on_key(self, event: events.Key) -> None:
         if event.key == "ctrl+r":
@@ -382,6 +467,7 @@ class NemoApp(App):
             return
 
         self._last_user_input = user_input
+        self._mark_vram_activity()
         self._history.append(user_input)
         self._history_idx = -1
         await self._send_message(user_input)
@@ -396,6 +482,7 @@ class NemoApp(App):
             self._messages.pop()
             self._messages.pop()
         self._history_idx = -1
+        self._mark_vram_activity()
         await self._send_message(self._last_user_input)
 
     async def _handle_clear(self) -> None:

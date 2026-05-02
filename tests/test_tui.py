@@ -1,12 +1,16 @@
+import asyncio
+
 import pytest
-from mnemo8.loader import load_available_vram_mib
+from types import SimpleNamespace
+from mnemo8.loader import load_available_vram
 from mnemo8.tui import (
     ThinkingWidget,
     MessageWidget,
     _build_header_status,
     _build_chat_transcript,
     _build_system_prompt,
-    _format_available_vram,
+    compute_vram_poll_interval,
+    _format_vram_bar,
     _parse_skill,
     cycle_history,
     NemoApp,
@@ -135,16 +139,24 @@ def test_build_system_prompt_no_skills_omits_skill_section():
     assert "--- Skill:" not in prompt
 
 
-def test_format_available_vram_none():
-    assert _format_available_vram(None) == "VRAM n/a"
+def test_format_vram_bar_none_when_free_none():
+    assert _format_vram_bar(None, 8192) == "VRAM n/a"
 
 
-def test_format_available_vram_mib():
-    assert _format_available_vram(768) == "768 MiB VRAM free"
+def test_format_vram_bar_none_when_total_none():
+    assert _format_vram_bar(4096, None) == "VRAM n/a"
 
 
-def test_format_available_vram_gib():
-    assert _format_available_vram(12288) == "12.0 GiB VRAM free"
+def test_format_vram_bar_none_when_both_none():
+    assert _format_vram_bar(None, None) == "VRAM n/a"
+
+
+def test_format_vram_bar_mib():
+    assert _format_vram_bar(768, 2048) == "[██████░░░░] 768 MiB free"
+
+
+def test_format_vram_bar_gib():
+    assert _format_vram_bar(6144, 8192) == "[██░░░░░░░░] 6.0 GiB free"
 
 
 def test_build_header_status_includes_model_skills_and_vram():
@@ -155,9 +167,56 @@ def test_build_header_status_includes_model_skills_and_vram():
             Skill(name="calendar.md", path="skills/calendar.md", content="# Calendar")
         ],
         available_vram_mib=6144,
+        total_vram_mib=8192,
     )
 
-    assert _build_header_status(state) == "qwen3:8b · 1 skills · 6.0 GiB VRAM free"
+    assert (
+        _build_header_status(state) == "qwen3:8b · 1 skills · [██░░░░░░░░] 6.0 GiB free"
+    )
+
+
+def test_compute_vram_poll_interval_adapts_to_idle_time():
+    assert compute_vram_poll_interval(0) == 1
+    assert compute_vram_poll_interval(13) == 1
+    assert compute_vram_poll_interval(16) == 5
+    assert compute_vram_poll_interval(20) == 10
+    assert compute_vram_poll_interval(40) == 15
+    assert compute_vram_poll_interval(80) == 20
+    assert compute_vram_poll_interval(140) == 30
+
+
+def test_mark_vram_activity_sets_wakeup_event():
+    state = RuntimeState(cwd="/tmp")
+    app = NemoApp(state)
+    app._vram_poll_wakeup = asyncio.Event()
+
+    app._mark_vram_activity()
+
+    assert app._last_user_activity_monotonic is not None
+    assert app._vram_poll_wakeup.is_set()
+
+
+def test_on_input_submitted_marks_vram_activity_before_sending(monkeypatch):
+    state = RuntimeState(cwd="/tmp")
+    app = NemoApp(state)
+    app._vram_poll_wakeup = asyncio.Event()
+
+    sent: list[str] = []
+
+    async def fake_send_message(value: str) -> None:
+        sent.append(value)
+
+    class DummyInput:
+        value = ""
+
+    monkeypatch.setattr(app, "query_one", lambda *args, **kwargs: DummyInput())
+    monkeypatch.setattr(app, "_send_message", fake_send_message)
+
+    asyncio.run(app.on_input_submitted(SimpleNamespace(value="hello world")))
+
+    assert sent == ["hello world"]
+    assert app._last_user_activity_monotonic is not None
+    assert app._vram_poll_wakeup.is_set()
 
 
 def test_build_chat_transcript_uses_visible_messages_only():
@@ -406,22 +465,22 @@ def test_thinking_widget_advance_frame_cycles_spinner():
     assert widget.render().plain == "Dori\n⠋ thinking…"
 
 
-def test_load_available_vram_mib_sums_all_gpus(monkeypatch):
+def test_load_available_vram_sums_all_gpus(monkeypatch):
     class Result:
-        stdout = "4096\n2048\n"
+        stdout = "4096,8192\n2048,4096\n"
 
     def fake_run(*args, **kwargs):
         return Result()
 
     monkeypatch.setattr("mnemo8.loader.subprocess.run", fake_run)
 
-    assert load_available_vram_mib() == 6144
+    assert load_available_vram() == (6144, 12288)
 
 
-def test_load_available_vram_mib_returns_none_when_command_missing(monkeypatch):
+def test_load_available_vram_returns_none_tuple_when_command_missing(monkeypatch):
     def fake_run(*args, **kwargs):
         raise FileNotFoundError()
 
     monkeypatch.setattr("mnemo8.loader.subprocess.run", fake_run)
 
-    assert load_available_vram_mib() is None
+    assert load_available_vram() == (None, None)

@@ -3,7 +3,7 @@ import sys
 import argparse
 from pathlib import Path
 
-from mnemo8.loader import load_agents, load_available_vram_mib, load_skills
+from mnemo8.loader import load_agents, load_available_vram, load_skills
 from mnemo8.models import RuntimeState
 from mnemo8.tui import start_tui
 from mnemo8.commands import init_workspace
@@ -57,7 +57,7 @@ def run():
 
         # Step 3: Search for skills/
         skills = load_skills()
-        available_vram_mib = load_available_vram_mib()
+        available_vram_mib, total_vram_mib = load_available_vram()
 
         # Step 4: Initialize RuntimeState
         state = RuntimeState(
@@ -66,6 +66,7 @@ def run():
             skills=skills,
             chat_history=[],
             available_vram_mib=available_vram_mib,
+            total_vram_mib=total_vram_mib,
             debug=_read_debug_flag(),
             skill_confidence_threshold=_read_skill_confidence_threshold(),
         )

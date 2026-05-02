@@ -51,13 +51,13 @@ def load_skills() -> List[Skill]:
     return skills
 
 
-def load_available_vram_mib() -> Optional[int]:
-    """Return total available GPU VRAM in MiB when detectable via nvidia-smi."""
+def load_available_vram() -> tuple[Optional[int], Optional[int]]:
+    """Return (free_mib, total_mib) from nvidia-smi. Returns (None, None) if unavailable."""
     try:
         result = subprocess.run(
             [
                 "nvidia-smi",
-                "--query-gpu=memory.free",
+                "--query-gpu=memory.free,memory.total",
                 "--format=csv,noheader,nounits",
             ],
             capture_output=True,
@@ -65,16 +65,23 @@ def load_available_vram_mib() -> Optional[int]:
             check=True,
         )
     except (FileNotFoundError, subprocess.CalledProcessError):
-        return None
+        return (None, None)
 
-    values: List[int] = []
+    free_values: List[int] = []
+    total_values: List[int] = []
     for line in result.stdout.splitlines():
         stripped = line.strip()
         if not stripped:
             continue
+        parts = stripped.split(",")
+        if len(parts) != 2:
+            return (None, None)
         try:
-            values.append(int(stripped))
+            free_values.append(int(parts[0].strip()))
+            total_values.append(int(parts[1].strip()))
         except ValueError:
-            return None
+            return (None, None)
 
-    return sum(values) if values else None
+    free_total = sum(free_values) if free_values else None
+    total_total = sum(total_values) if total_values else None
+    return (free_total, total_total)
