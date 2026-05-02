@@ -1,21 +1,20 @@
 import asyncio
-
-import pytest
 from types import SimpleNamespace
+
 from mnemo8.loader import load_available_vram
+from mnemo8.models import RuntimeState, Skill
 from mnemo8.tui import (
-    ThinkingWidget,
     MessageWidget,
-    _build_header_status,
+    NemoApp,
+    ThinkingWidget,
     _build_chat_transcript,
+    _build_header_status,
     _build_system_prompt,
-    compute_vram_poll_interval,
     _format_vram_bar,
     _parse_skill,
+    compute_vram_poll_interval,
     cycle_history,
-    NemoApp,
 )
-from mnemo8.models import RuntimeState, Skill
 
 # --- _parse_skill ---
 

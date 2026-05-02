@@ -1,12 +1,10 @@
-import os
 import subprocess
-from typing import List, Optional
 from pathlib import Path
 
 from mnemo8.models import Skill
 
 
-def load_agents() -> Optional[str]:
+def load_agents() -> str | None:
     """Load AGENTS.md from the user's ~/.mnemo8 directory."""
     mnemo_home = Path.home() / ".mnemo8"
     agents_path = mnemo_home / "AGENTS.md"
@@ -23,35 +21,72 @@ def load_agents() -> Optional[str]:
         return None
 
 
-def load_skills() -> List[Skill]:
-    """Load all markdown files from `~/.mnemo8/skills`."""
+def load_skills() -> list[Skill]:
+    """Load skills from `~/.mnemo8/skills`, building a tree from subdirectories."""
     mnemo_home = Path.home() / ".mnemo8"
     skills_dir = mnemo_home / "skills"
-    skills: List[Skill] = []
-
     if not skills_dir.is_dir():
+        return []
+    return _load_node(skills_dir, skills_dir)
+
+
+def _load_node(directory: Path, root: Path) -> list[Skill]:
+    """Recursively load skills from a directory.
+
+    Files (*.md, excluding _index.md) become leaf skills.
+    Subdirectories become router skills whose content is taken from _index.md
+    if present, or a minimal auto-generated description otherwise.
+    """
+    skills: list[Skill] = []
+    try:
+        entries = sorted(directory.iterdir())
+    except PermissionError as e:
+        print(f"Warning: Cannot read directory {directory}: {e}")
         return skills
 
-    for filepath in skills_dir.rglob("*.md"):
-        if filepath.is_file():
+    for item in entries:
+        if item.is_file() and item.suffix == ".md" and item.stem != "_index":
             try:
-                content = filepath.read_text(encoding="utf-8")
+                content = item.read_text(encoding="utf-8")
                 skills.append(
                     Skill(
-                        name=filepath.name,
-                        path=str(filepath.relative_to(mnemo_home)),
+                        name=item.stem,
+                        path=str(item.relative_to(root)),
                         content=content,
                     )
                 )
             except UnicodeDecodeError:
-                print(f"Warning: Failed to decode {filepath} as UTF-8. Skipping.")
+                print(f"Warning: Failed to decode {item} as UTF-8. Skipping.")
             except Exception as e:
-                print(f"Warning: Could not read {filepath}: {e}")
+                print(f"Warning: Could not read {item}: {e}")
+        elif item.is_dir():
+            try:
+                index_path = item / "_index.md"
+                if index_path.is_file():
+                    content = index_path.read_text(encoding="utf-8")
+                else:
+                    content = (
+                        f"# {item.name}\n**Intent**: Tasks related to {item.name}.\n"
+                    )
+                children = _load_node(item, root)
+                if children:
+                    skills.append(
+                        Skill(
+                            name=item.name,
+                            path=str(item.relative_to(root)),
+                            content=content,
+                            children=children,
+                        )
+                    )
+            except UnicodeDecodeError:
+                print(f"Warning: Failed to decode {index_path} as UTF-8. Skipping.")
+            except Exception as e:
+                print(f"Warning: Could not load router skill {item}: {e}")
 
     return skills
 
 
-def load_available_vram() -> tuple[Optional[int], Optional[int]]:
+def load_available_vram() -> tuple[int | None, int | None]:
     """Return (free_mib, total_mib) from nvidia-smi. Returns (None, None) if unavailable."""
     try:
         result = subprocess.run(
@@ -67,8 +102,8 @@ def load_available_vram() -> tuple[Optional[int], Optional[int]]:
     except (FileNotFoundError, subprocess.CalledProcessError):
         return (None, None)
 
-    free_values: List[int] = []
-    total_values: List[int] = []
+    free_values: list[int] = []
+    total_values: list[int] = []
     for line in result.stdout.splitlines():
         stripped = line.strip()
         if not stripped:

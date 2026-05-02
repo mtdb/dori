@@ -18,7 +18,24 @@ dependencies = [
 mnemo8 = "mnemo8.main:run"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = ["pytest>=8.0", "ruff", "mypy", "pre-commit"]
 
 [tool.setuptools]
 packages = ["mnemo8"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4"]
+ignore = ["E501", "UP038"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = false
+
+[tool.pre-commit]
+yaml_version = "2.0.0"

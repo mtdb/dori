@@ -1,12 +1,12 @@
+import argparse
 import os
 import sys
-import argparse
 from pathlib import Path
 
+from mnemo8.commands import init_workspace
 from mnemo8.loader import load_agents, load_available_vram, load_skills
 from mnemo8.models import RuntimeState
 from mnemo8.tui import start_tui
-from mnemo8.commands import init_workspace
 
 
 def _read_debug_flag() -> bool:

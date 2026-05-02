@@ -1,18 +1,35 @@
 import shutil
 from pathlib import Path
+
 from rich.console import Console
 
 console = Console()
 
 
-def init_workspace(cwd: str):
-    """Initializes the user's ~/.mnemo8 directory from the repository `boilerplate/`.
+def _resolve_boilerplate_dir(cwd: str) -> tuple[Path, Path, bool]:
+    """Find boilerplate/ from cwd first, then fall back to the package repo root."""
+    requested_root = Path(cwd).expanduser().resolve()
+    requested_boilerplate = requested_root / "boilerplate"
+    if requested_boilerplate.is_dir():
+        return requested_root, requested_boilerplate, False
 
-    `cwd` should be the repository root (where `boilerplate/` lives).
-    """
-    repo_root = Path(cwd)
-    boilerplate_dir = repo_root / "boilerplate"
+    package_repo_root = Path(__file__).resolve().parent.parent
+    package_boilerplate = package_repo_root / "boilerplate"
+    if package_boilerplate.is_dir():
+        return package_repo_root, package_boilerplate, True
+
+    return requested_root, requested_boilerplate, False
+
+
+def init_workspace(cwd: str):
+    """Initialize ~/.mnemo8 using boilerplate files shipped with mnemo8."""
+    repo_root, boilerplate_dir, used_fallback = _resolve_boilerplate_dir(cwd)
     mnemo_home = Path.home() / ".mnemo8"
+
+    if used_fallback:
+        console.print(
+            f"[yellow]Using bundled boilerplate at {boilerplate_dir}[/yellow]"
+        )
 
     # Ensure ~/.mnemo8 exists
     if not mnemo_home.exists():
@@ -60,9 +77,10 @@ def init_workspace(cwd: str):
     skills_src = boilerplate_dir / "skills"
     skills_dest = mnemo_home / "skills"
     if skills_src.is_dir():
-        skills_dest.mkdir(exist_ok=True)
         for src in skills_src.rglob("*.md"):
-            dest = skills_dest / src.name
+            relative = src.relative_to(skills_src)
+            dest = skills_dest / relative
+            dest.parent.mkdir(parents=True, exist_ok=True)
             if dest.exists():
                 console.print(
                     f"[yellow]Skipped[/yellow] {dest.relative_to(mnemo_home)} (already exists)"

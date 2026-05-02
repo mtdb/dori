@@ -1,5 +1,5 @@
-import sys
 import json
+import sys
 
 
 def main():
@@ -11,9 +11,9 @@ def main():
         payload = json.loads(sys.argv[1])
         query = payload.get("query", "unknown query")
 
-        print(f"🔍 [Search]: Searching the web for '{query}'...")
+        print(f"🖼️  [Image Search]: Searching images for '{query}'...")
     except json.JSONDecodeError:
-        print("Error: Invalid JSON payload provided to search script.")
+        print("Error: Invalid JSON payload provided to images script.")
         sys.exit(1)
 
 

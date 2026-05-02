@@ -1,6 +1,6 @@
 import asyncio
-import math
 import json
+import math
 import os
 import re
 import subprocess
@@ -97,10 +97,42 @@ def _format_vram_bar(free_mib: int | None, total_mib: int | None) -> str:
     return f"[{bar}] {free_gib:.1f} GiB free"
 
 
+def _count_leaf_skills(skills: list) -> int:
+    """Count all leaf (executable) skills in the tree."""
+    total = 0
+    for s in skills:
+        if s.is_router:
+            total += _count_leaf_skills(s.children)
+        else:
+            total += 1
+    return total
+
+
+def _build_routing_messages(user_message: str, candidates: list) -> list[dict]:
+    """Build a minimal ephemeral prompt for one routing step."""
+    options = "\n".join(
+        f'- "{s.name}": {s.content.splitlines()[0].lstrip("#").strip()}'
+        for s in candidates
+    )
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a router. Pick the single best option for the user's request.\n"
+                "Respond with a JSON object with keys 'skill' (one of the option names) "
+                "and 'confidence' (float 0.0–1.0). No prose, no markdown.\n\n"
+                f"Options:\n{options}"
+            ),
+        },
+        {"role": "user", "content": user_message},
+    ]
+
+
 def _build_header_status(state: RuntimeState) -> str:
+    leaf_count = _count_leaf_skills(state.skills)
     return (
         f"{state.model}"
-        f" · {len(state.skills)} skills"
+        f" · {leaf_count} skills"
         f" · {_format_vram_bar(state.available_vram_mib, state.total_vram_mib)}"
     )
 
@@ -377,7 +409,7 @@ class NemoApp(App):
             interval = compute_vram_poll_interval(idle_seconds)
             try:
                 await asyncio.wait_for(self._vram_poll_wakeup.wait(), timeout=interval)
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 pass
             else:
                 self._vram_poll_wakeup.clear()
@@ -403,6 +435,30 @@ class NemoApp(App):
         inp.value = value
         inp.cursor_position = len(value)
 
+    async def _descend_router(self, user_message: str, router_skill) -> dict | None:
+        """Walk down a router skill tree until a leaf is found, using ephemeral LLM calls."""
+        current = router_skill
+        while current.is_router:
+            routing_messages = _build_routing_messages(user_message, current.children)
+            try:
+                response = await asyncio.to_thread(
+                    ollama.chat, model=self._state.model, messages=routing_messages
+                )
+            except Exception:
+                return None
+            payload = _parse_skill(
+                response["message"]["content"], self._state.skill_confidence_threshold
+            )
+            if payload is None:
+                return None
+            matched = next(
+                (s for s in current.children if s.name == payload["skill"]), None
+            )
+            if matched is None:
+                return None
+            current = matched
+        return {"skill": current.name, "confidence": 1.0}
+
     async def _send_message(self, user_input: str) -> None:
         msg_list = self.query_one(MessageList)
         user_widget = MessageWidget("user", user_input)
@@ -418,7 +474,26 @@ class NemoApp(App):
             await thinking.remove()
             content = response["message"]["content"]
             self._messages.append({"role": "assistant", "content": content})
-            response_widget = await self._mount_nemo_response(msg_list, content)
+
+            # Resolve routing: descend tree if LLM picked a router skill
+            resolved_skill = _parse_skill(
+                content, self._state.skill_confidence_threshold
+            )
+            if resolved_skill:
+                matched = next(
+                    (
+                        s
+                        for s in self._state.skills
+                        if s.name == resolved_skill["skill"]
+                    ),
+                    None,
+                )
+                if matched and matched.is_router:
+                    resolved_skill = await self._descend_router(user_input, matched)
+
+            response_widget = await self._mount_nemo_response(
+                msg_list, content, resolved_skill
+            )
             self._last_interaction_widgets = [user_widget, response_widget]
         except Exception as e:
             await thinking.remove()
@@ -429,9 +504,13 @@ class NemoApp(App):
         msg_list.scroll_end()
 
     async def _mount_nemo_response(
-        self, msg_list: MessageList, content: str
+        self, msg_list: MessageList, content: str, resolved_skill: dict | None = None
     ) -> MessageWidget:
-        skill_json = _parse_skill(content, self._state.skill_confidence_threshold)
+        skill_json = (
+            resolved_skill
+            if resolved_skill is not None
+            else _parse_skill(content, self._state.skill_confidence_threshold)
+        )
         if skill_json:
             skill_name = skill_json["skill"]
             skill_output = await asyncio.to_thread(_run_skill, skill_name, skill_json)
