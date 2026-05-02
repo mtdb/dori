@@ -1,0 +1,82 @@
+/* mnemo8/tui.tcss */
+
+NemoApp {
+    background: #000000;
+}
+
+#header {
+    height: 1;
+    background: #000000;
+    border-bottom: solid #222222;
+}
+
+#header-left {
+    color: #6fc3df;
+    text-style: bold;
+    width: 1fr;
+    padding: 0 1;
+}
+
+#header-right {
+    color: #444444;
+    width: auto;
+    padding: 0 1;
+}
+
+MessageList {
+    height: 1fr;
+    background: #000000;
+    padding: 1 0;
+}
+
+MessageWidget.user {
+    border-left: tall #6fc3df;
+    padding: 0 1;
+    margin-bottom: 1;
+    background: #000000;
+    height: auto;
+}
+
+MessageWidget.nemo {
+    border-left: tall #f38518;
+    padding: 0 1;
+    margin-bottom: 1;
+    background: #000000;
+    height: auto;
+}
+
+ThinkingWidget {
+    border-left: tall #555555;
+    padding: 0 1;
+    margin-bottom: 1;
+    background: #000000;
+    height: auto;
+}
+
+#input-bar {
+    height: 3;
+    border-top: solid #222222;
+    background: #000000;
+    padding: 0;
+}
+
+#prompt-label {
+    width: 3;
+    padding: 1 0 0 1;
+    color: #6fc3df;
+    text-style: bold;
+}
+
+NemoInput {
+    border: none;
+    background: #000000;
+    color: #ffffff;
+    padding: 1 0 0 0;
+}
+
+#footer {
+    height: 1;
+    background: #000000;
+    border-top: solid #111111;
+    padding: 0 1;
+}
