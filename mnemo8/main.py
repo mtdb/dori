@@ -9,6 +9,26 @@ from mnemo8.tui import start_tui
 from mnemo8.commands import init_workspace
 
 
+def _read_debug_flag() -> bool:
+    return os.environ.get("MNEMO8_DEBUG", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
+def _read_skill_confidence_threshold() -> float:
+    raw_value = os.environ.get("MNEMO8_SKILL_CONFIDENCE_THRESHOLD")
+    if raw_value is None:
+        return 0.8
+    try:
+        value = float(raw_value)
+    except ValueError:
+        return 0.8
+    return min(1.0, max(0.0, value))
+
+
 def run():
     """Main entry point for the mnemo8 CLI."""
     parser = argparse.ArgumentParser(description="mnemo8 Personal Assistant")
@@ -46,6 +66,8 @@ def run():
             skills=skills,
             chat_history=[],
             available_vram_mib=available_vram_mib,
+            debug=_read_debug_flag(),
+            skill_confidence_threshold=_read_skill_confidence_threshold(),
         )
 
         # Step 5: Start TUI interface

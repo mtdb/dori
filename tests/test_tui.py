@@ -17,17 +17,38 @@ from mnemo8.models import RuntimeState, Skill
 
 
 def test_parse_skill_plain_json():
-    content = '{"skill": "reminders", "time": "9am"}'
-    assert _parse_skill(content) == {"skill": "reminders", "time": "9am"}
+    content = '{"skill": "reminders", "time": "9am", "confidence": 0.95}'
+    assert _parse_skill(content) == {
+        "skill": "reminders",
+        "time": "9am",
+        "confidence": 0.95,
+    }
 
 
 def test_parse_skill_in_code_block():
-    content = 'Sure!\n```json\n{"skill": "calendar"}\n```'
-    assert _parse_skill(content) == {"skill": "calendar"}
+    content = '```json\n{"skill": "calendar", "confidence": 0.85}\n```'
+    assert _parse_skill(content) == {"skill": "calendar", "confidence": 0.85}
 
 
 def test_parse_skill_missing_skill_key():
-    assert _parse_skill('{"action": "remind"}') is None
+    assert _parse_skill('{"action": "remind", "confidence": 0.9}') is None
+
+
+def test_parse_skill_missing_confidence_uses_legacy_standalone_json():
+    assert _parse_skill('{"skill": "reminders", "time": "9am"}') == {
+        "skill": "reminders",
+        "time": "9am",
+        "confidence": 1.0,
+    }
+
+
+def test_parse_skill_missing_confidence_with_prose_is_ignored():
+    assert _parse_skill('Claro:\n```json\n{"skill": "reminders", "time": "9am"}\n```') is None
+
+
+def test_parse_skill_below_threshold_is_ignored():
+    content = '{"skill": "search", "query": "shakira", "confidence": 0.79}'
+    assert _parse_skill(content, min_confidence=0.8) is None
 
 
 def test_parse_skill_plain_text():
@@ -96,6 +117,7 @@ def test_build_system_prompt_includes_skill_content():
     prompt = _build_system_prompt(state)
     assert "calendar.md" in prompt
     assert "# Calendar" in prompt
+    assert "confidence" in prompt
 
 
 def test_build_system_prompt_includes_agents_content():
@@ -147,6 +169,116 @@ def test_build_chat_transcript_uses_visible_messages_only():
     assert transcript == "You\nhello\n\nNemo\nhi there"
 
 
+def test_mount_nemo_response_executes_high_confidence_skill_without_json(monkeypatch):
+    state = RuntimeState(cwd="/tmp", skill_confidence_threshold=0.8)
+    app = NemoApp(state)
+
+    class DummyMessageList:
+        def __init__(self) -> None:
+            self.children: list[object] = []
+
+        async def mount(self, widget):
+            self.children.append(widget)
+
+    monkeypatch.setattr("mnemo8.tui._run_skill", lambda name, payload: "Madrid, 20 Nov")
+
+    import asyncio
+
+    widget = asyncio.run(
+        app._mount_nemo_response(
+            DummyMessageList(),
+            '{"skill": "search", "query": "Shakira concert Madrid", "confidence": 0.92}',
+        )
+    )
+
+    assert "✓ search" in widget._content
+    assert "Madrid, 20 Nov" in widget._content
+    assert '"skill": "search"' not in widget._content
+
+
+def test_mount_nemo_response_executes_legacy_standalone_json(monkeypatch):
+    state = RuntimeState(cwd="/tmp", skill_confidence_threshold=0.8)
+    app = NemoApp(state)
+
+    class DummyMessageList:
+        def __init__(self) -> None:
+            self.children: list[object] = []
+
+        async def mount(self, widget):
+            self.children.append(widget)
+
+    monkeypatch.setattr("mnemo8.tui._run_skill", lambda name, payload: "recordatorio creado")
+
+    import asyncio
+
+    widget = asyncio.run(
+        app._mount_nemo_response(
+            DummyMessageList(),
+            '{"skill": "reminders", "message": "salir a correr", "when": "en 10 minutos"}',
+        )
+    )
+
+    assert "✓ reminders" in widget._content
+    assert "recordatorio creado" in widget._content
+    assert '"skill": "reminders"' not in widget._content
+
+
+def test_mount_nemo_response_shows_json_in_debug_mode(monkeypatch):
+    state = RuntimeState(cwd="/tmp", debug=True, skill_confidence_threshold=0.8)
+    app = NemoApp(state)
+
+    class DummyMessageList:
+        def __init__(self) -> None:
+            self.children: list[object] = []
+
+        async def mount(self, widget):
+            self.children.append(widget)
+
+    monkeypatch.setattr("mnemo8.tui._run_skill", lambda name, payload: "Madrid, 20 Nov")
+
+    import asyncio
+
+    widget = asyncio.run(
+        app._mount_nemo_response(
+            DummyMessageList(),
+            '{"skill": "search", "query": "Shakira concert Madrid", "confidence": 0.92}',
+        )
+    )
+
+    assert '"skill": "search"' in widget._content
+
+
+def test_mount_nemo_response_hides_low_confidence_payload(monkeypatch):
+    state = RuntimeState(cwd="/tmp", skill_confidence_threshold=0.8)
+    app = NemoApp(state)
+    executed: list[str] = []
+
+    class DummyMessageList:
+        def __init__(self) -> None:
+            self.children: list[object] = []
+
+        async def mount(self, widget):
+            self.children.append(widget)
+
+    def fake_run_skill(name, payload):
+        executed.append(name)
+        return "should not run"
+
+    monkeypatch.setattr("mnemo8.tui._run_skill", fake_run_skill)
+
+    import asyncio
+
+    widget = asyncio.run(
+        app._mount_nemo_response(
+            DummyMessageList(),
+            'Necesito confirmar la fecha exacta.\n```json\n{"skill": "search", "query": "Shakira concert Madrid", "confidence": 0.42}\n```',
+        )
+    )
+
+    assert executed == []
+    assert widget._content == "Necesito confirmar la fecha exacta."
+
+
 def test_clear_command_resets_chat_but_keeps_input_history():
     state = RuntimeState(cwd="/tmp")
     app = NemoApp(state)
@@ -163,7 +295,7 @@ def test_clear_command_resets_chat_but_keeps_input_history():
 
     class DummyMessageList:
         def __init__(self) -> None:
-            self.children = []
+            self.children: list[object] = []
 
     app.query_one = lambda *args, **kwargs: DummyMessageList()  # type: ignore[method-assign]
 
@@ -224,7 +356,7 @@ def test_action_copy_chat_warns_when_chat_is_empty(monkeypatch):
 
     class DummyMessageList:
         def __init__(self) -> None:
-            self.children = []
+            self.children: list[object] = []
 
     copied: list[str] = []
     notifications: list[tuple[str, str, str | None]] = []

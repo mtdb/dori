@@ -23,6 +23,56 @@ COLOR_NEMO = "#f38518"
 COLOR_THINKING = "#555555"
 
 
+def _is_standalone_skill_payload(content: str) -> bool:
+    stripped = content.strip()
+    if not stripped:
+        return False
+    if stripped.startswith("{") and stripped.endswith("}"):
+        return True
+    return bool(
+        re.fullmatch(r"```(?:json)?\s*\{.*?\}\s*```", stripped, re.DOTALL)
+    )
+
+
+def _extract_skill_payload(content: str) -> dict | None:
+    parsed = None
+    try:
+        parsed = json.loads(content)
+    except json.JSONDecodeError:
+        match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
+        if match:
+            try:
+                parsed = json.loads(match.group(1))
+            except json.JSONDecodeError:
+                pass
+
+    if not isinstance(parsed, dict):
+        return None
+
+    skill_name = parsed.get("skill")
+    confidence = parsed.get("confidence")
+    if not isinstance(skill_name, str) or not skill_name.strip():
+        return None
+    if confidence is None:
+        if not _is_standalone_skill_payload(content):
+            return None
+        confidence_value = 1.0
+    else:
+        if isinstance(confidence, bool) or not isinstance(confidence, (int, float, str)):
+            return None
+        try:
+            confidence_value = float(confidence)
+        except (TypeError, ValueError):
+            return None
+    if not 0.0 <= confidence_value <= 1.0:
+        return None
+
+    payload = dict(parsed)
+    payload["skill"] = skill_name.strip()
+    payload["confidence"] = confidence_value
+    return payload
+
+
 def _format_available_vram(available_vram_mib: int | None) -> str:
     if available_vram_mib is None:
         return "VRAM n/a"
@@ -39,20 +89,27 @@ def _build_header_status(state: RuntimeState) -> str:
     )
 
 
-def _parse_skill(content: str) -> dict | None:
-    parsed = None
-    try:
-        parsed = json.loads(content)
-    except json.JSONDecodeError:
-        match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", content, re.DOTALL)
-        if match:
-            try:
-                parsed = json.loads(match.group(1))
-            except json.JSONDecodeError:
-                pass
-    if isinstance(parsed, dict) and "skill" in parsed:
-        return parsed
+def _parse_skill(content: str, min_confidence: float = 0.0) -> dict | None:
+    payload = _extract_skill_payload(content)
+    if payload and payload["confidence"] >= min_confidence:
+        return payload
     return None
+
+
+def _strip_skill_payload(content: str) -> str:
+    payload = _extract_skill_payload(content)
+    if payload is None:
+        return content
+
+    stripped = content.strip()
+    try:
+        if json.loads(stripped) == payload:
+            return ""
+    except json.JSONDecodeError:
+        pass
+
+    cleaned = re.sub(r"```(?:json)?\s*\{.*?\}\s*```", "", content, flags=re.DOTALL)
+    return cleaned.strip()
 
 
 def cycle_history(history: list[str], idx: int, direction: int) -> tuple[int, str]:
@@ -78,8 +135,10 @@ def _build_system_prompt(state: RuntimeState) -> str:
     if state.skills:
         prompt += "\nHere are your available skills that you should be aware of:\n"
         prompt += (
-            "IMPORTANT: If the user asks you to perform an action that matches an available skill, "
-            "you MUST output a JSON code block with the exact arguments required by the skill.\n"
+            "IMPORTANT: When a skill clearly matches the user's request, respond with a single JSON object only. "
+            "Do not add markdown, explanation, or extra prose. The JSON must include the exact skill arguments "
+            "plus a numeric 'confidence' field between 0.0 and 1.0. Only emit skill JSON when confidence is at "
+            f"least {state.skill_confidence_threshold:.2f}; otherwise answer normally or ask a short clarifying question.\n"
         )
         for skill in state.skills:
             prompt += f"\n--- Skill: {skill.name} ---\n{skill.content}\n"
@@ -288,15 +347,19 @@ class NemoApp(App):
     async def _mount_nemo_response(
         self, msg_list: MessageList, content: str
     ) -> MessageWidget:
-        skill_json = _parse_skill(content)
+        skill_json = _parse_skill(content, self._state.skill_confidence_threshold)
         if skill_json:
             skill_name = skill_json["skill"]
             skill_output = await asyncio.to_thread(_run_skill, skill_name, skill_json)
-            display = f"[{COLOR_USER}]✓ {skill_name}[/]\n{content}"
+            display = f"[{COLOR_USER}]✓ {skill_name}[/]"
+            if self._state.debug:
+                display += f"\n{content}"
             if skill_output:
                 display += f"\n{skill_output}"
         else:
-            display = content
+            display = content if self._state.debug else _strip_skill_payload(content)
+            if not display.strip():
+                display = "I need one more detail before I can choose a skill."
         response_widget = MessageWidget("nemo", display)
         await msg_list.mount(response_widget)
         return response_widget
