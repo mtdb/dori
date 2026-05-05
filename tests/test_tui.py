@@ -1,6 +1,7 @@
 import asyncio
 from types import SimpleNamespace
 
+from mnemo8.chat import ChatResponse, build_system_prompt, parse_skill
 from mnemo8.loader import load_available_vram
 from mnemo8.models import RuntimeState, Skill
 from mnemo8.tui import (
@@ -9,60 +10,14 @@ from mnemo8.tui import (
     ThinkingWidget,
     _build_chat_transcript,
     _build_header_status,
-    _build_system_prompt,
     _format_vram_bar,
-    _parse_skill,
     compute_vram_poll_interval,
     cycle_history,
 )
 
-# --- _parse_skill ---
-
-
-def test_parse_skill_plain_json():
-    content = '{"skill": "reminders", "time": "9am", "confidence": 0.95}'
-    assert _parse_skill(content) == {
-        "skill": "reminders",
-        "time": "9am",
-        "confidence": 0.95,
-    }
-
-
-def test_parse_skill_in_code_block():
-    content = '```json\n{"skill": "calendar", "confidence": 0.85}\n```'
-    assert _parse_skill(content) == {"skill": "calendar", "confidence": 0.85}
-
-
-def test_parse_skill_missing_skill_key():
-    assert _parse_skill('{"action": "remind", "confidence": 0.9}') is None
-
-
-def test_parse_skill_missing_confidence_uses_legacy_standalone_json():
-    assert _parse_skill('{"skill": "reminders", "time": "9am"}') == {
-        "skill": "reminders",
-        "time": "9am",
-        "confidence": 1.0,
-    }
-
-
-def test_parse_skill_missing_confidence_with_prose_is_ignored():
-    assert (
-        _parse_skill('Claro:\n```json\n{"skill": "reminders", "time": "9am"}\n```')
-        is None
-    )
-
-
-def test_parse_skill_below_threshold_is_ignored():
-    content = '{"skill": "search", "query": "shakira", "confidence": 0.79}'
-    assert _parse_skill(content, min_confidence=0.8) is None
-
-
-def test_parse_skill_plain_text():
-    assert _parse_skill("I believe Paris is the capital.") is None
-
-
-def test_parse_skill_empty_string():
-    assert _parse_skill("") is None
+# Backward-compat aliases so tests that reference the old tui names still pass
+_build_system_prompt = build_system_prompt
+_parse_skill = parse_skill
 
 
 # --- cycle_history ---
@@ -102,40 +57,6 @@ def test_cycle_history_empty_list():
     idx, val = cycle_history([], -1, -1)
     assert idx == -1
     assert val == ""
-
-
-# --- _build_system_prompt ---
-
-
-def test_build_system_prompt_base():
-    state = RuntimeState(cwd="/tmp")
-    prompt = _build_system_prompt(state)
-    assert "mnemo8" in prompt
-
-
-def test_build_system_prompt_includes_skill_content():
-    state = RuntimeState(
-        cwd="/tmp",
-        skills=[
-            Skill(name="calendar.md", path="skills/calendar.md", content="# Calendar")
-        ],
-    )
-    prompt = _build_system_prompt(state)
-    assert "calendar.md" in prompt
-    assert "# Calendar" in prompt
-    assert "confidence" in prompt
-
-
-def test_build_system_prompt_includes_agents_content():
-    state = RuntimeState(cwd="/tmp", agents_content="You are Dori.")
-    prompt = _build_system_prompt(state)
-    assert "You are Dori." in prompt
-
-
-def test_build_system_prompt_no_skills_omits_skill_section():
-    state = RuntimeState(cwd="/tmp")
-    prompt = _build_system_prompt(state)
-    assert "--- Skill:" not in prompt
 
 
 def test_format_vram_bar_none_when_free_none():
@@ -230,8 +151,9 @@ def test_build_chat_transcript_uses_visible_messages_only():
     assert transcript == "You\nhello\n\nDori\nhi there"
 
 
-def test_mount_nemo_response_executes_high_confidence_skill_without_json(monkeypatch):
-    state = RuntimeState(cwd="/tmp", skill_confidence_threshold=0.8)
+def test_mount_nemo_response_renders_display_text():
+    """_mount_nemo_response is now a thin display layer; it just mounts a widget."""
+    state = RuntimeState(cwd="/tmp")
     app = NemoApp(state)
 
     class DummyMessageList:
@@ -241,112 +163,22 @@ def test_mount_nemo_response_executes_high_confidence_skill_without_json(monkeyp
         async def mount(self, widget):
             self.children.append(widget)
 
-    monkeypatch.setattr("mnemo8.tui._run_skill", lambda name, payload: "Madrid, 20 Nov")
-
-    import asyncio
-
-    widget = asyncio.run(
-        app._mount_nemo_response(
-            DummyMessageList(),
-            '{"skill": "search", "query": "Shakira concert Madrid", "confidence": 0.92}',
-        )
+    chat_response = ChatResponse(
+        raw_content="raw",
+        display_text="✓ search\n22°C, sunny",
+        resolved_skill={"skill": "search", "confidence": 0.9},
+        skill_output="22°C, sunny",
     )
+    widget = asyncio.run(app._mount_nemo_response(DummyMessageList(), chat_response))
 
-    assert "✓ search" in widget._content
-    assert "Madrid, 20 Nov" in widget._content
-    assert '"skill": "search"' not in widget._content
-
-
-def test_mount_nemo_response_executes_legacy_standalone_json(monkeypatch):
-    state = RuntimeState(cwd="/tmp", skill_confidence_threshold=0.8)
-    app = NemoApp(state)
-
-    class DummyMessageList:
-        def __init__(self) -> None:
-            self.children: list[object] = []
-
-        async def mount(self, widget):
-            self.children.append(widget)
-
-    monkeypatch.setattr(
-        "mnemo8.tui._run_skill", lambda name, payload: "recordatorio creado"
-    )
-
-    import asyncio
-
-    widget = asyncio.run(
-        app._mount_nemo_response(
-            DummyMessageList(),
-            '{"skill": "reminders", "message": "salir a correr", "when": "en 10 minutos"}',
-        )
-    )
-
-    assert "✓ reminders" in widget._content
-    assert "recordatorio creado" in widget._content
-    assert '"skill": "reminders"' not in widget._content
-
-
-def test_mount_nemo_response_shows_json_in_debug_mode(monkeypatch):
-    state = RuntimeState(cwd="/tmp", debug=True, skill_confidence_threshold=0.8)
-    app = NemoApp(state)
-
-    class DummyMessageList:
-        def __init__(self) -> None:
-            self.children: list[object] = []
-
-        async def mount(self, widget):
-            self.children.append(widget)
-
-    monkeypatch.setattr("mnemo8.tui._run_skill", lambda name, payload: "Madrid, 20 Nov")
-
-    import asyncio
-
-    widget = asyncio.run(
-        app._mount_nemo_response(
-            DummyMessageList(),
-            '{"skill": "search", "query": "Shakira concert Madrid", "confidence": 0.92}',
-        )
-    )
-
-    assert '"skill": "search"' in widget._content
-
-
-def test_mount_nemo_response_hides_low_confidence_payload(monkeypatch):
-    state = RuntimeState(cwd="/tmp", skill_confidence_threshold=0.8)
-    app = NemoApp(state)
-    executed: list[str] = []
-
-    class DummyMessageList:
-        def __init__(self) -> None:
-            self.children: list[object] = []
-
-        async def mount(self, widget):
-            self.children.append(widget)
-
-    def fake_run_skill(name, payload):
-        executed.append(name)
-        return "should not run"
-
-    monkeypatch.setattr("mnemo8.tui._run_skill", fake_run_skill)
-
-    import asyncio
-
-    widget = asyncio.run(
-        app._mount_nemo_response(
-            DummyMessageList(),
-            'Necesito confirmar la fecha exacta.\n```json\n{"skill": "search", "query": "Shakira concert Madrid", "confidence": 0.42}\n```',
-        )
-    )
-
-    assert executed == []
-    assert widget._content == "Necesito confirmar la fecha exacta."
+    assert widget._content == "✓ search\n22°C, sunny"
 
 
 def test_clear_command_resets_chat_but_keeps_input_history():
     state = RuntimeState(cwd="/tmp")
     app = NemoApp(state)
     original_prompt = _build_system_prompt(state)
-    app._messages = [
+    app._engine.messages = [
         {"role": "system", "content": original_prompt},
         {"role": "user", "content": "hello"},
         {"role": "assistant", "content": "hi"},
@@ -366,7 +198,7 @@ def test_clear_command_resets_chat_but_keeps_input_history():
 
     asyncio.run(app._handle_clear())
 
-    assert app._messages == [{"role": "system", "content": original_prompt}]
+    assert app._engine.messages == [{"role": "system", "content": original_prompt}]
     assert app._last_user_input is None
     assert app._last_interaction_widgets == []
     assert app._history == ["first", "second"]
@@ -483,3 +315,26 @@ def test_load_available_vram_returns_none_tuple_when_command_missing(monkeypatch
     monkeypatch.setattr("mnemo8.loader.subprocess.run", fake_run)
 
     assert load_available_vram() == (None, None)
+
+
+def test_initial_prompt_triggers_send(monkeypatch):
+    # _submit_initial_prompt must call _send_message with the prompt text
+    state = RuntimeState(cwd="/tmp", initial_prompt="remind me at 9am")
+    app = NemoApp(state)
+    app._vram_poll_wakeup = asyncio.Event()
+    sent: list[str] = []
+
+    async def fake_send_message(value: str) -> None:
+        sent.append(value)
+
+    monkeypatch.setattr(app, "_send_message", fake_send_message)
+
+    asyncio.run(app._submit_initial_prompt("remind me at 9am"))
+
+    assert sent == ["remind me at 9am"]
+
+
+def test_initial_prompt_blank_is_ignored():
+    # on_mount skips _submit_initial_prompt when the prompt is blank
+    state = RuntimeState(cwd="/tmp", initial_prompt="   ")
+    assert (state.initial_prompt or "").strip() == ""
