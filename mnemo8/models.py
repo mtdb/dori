@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 from dataclasses import dataclass, field
 
 
@@ -8,7 +6,7 @@ class Skill:
     name: str
     path: str
     content: str
-    children: list[Skill] = field(default_factory=list)
+    children: list["Skill"] = field(default_factory=list)
 
     @property
     def is_router(self) -> bool:

@@ -6,8 +6,6 @@ and display-text construction.  Both the TUI and the inline CLI use this
 module so the behaviour is always identical.
 """
 
-from __future__ import annotations
-
 import asyncio
 import json
 import os
