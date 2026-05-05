@@ -1,8 +1,13 @@
 import argparse
+import asyncio
 import os
 import sys
 from pathlib import Path
 
+from rich.console import Console
+from rich.markup import escape
+
+from mnemo8.chat import ConversationEngine
 from mnemo8.commands import init_workspace
 from mnemo8.loader import load_agents, load_available_vram, load_skills
 from mnemo8.models import RuntimeState
@@ -32,6 +37,12 @@ def _read_skill_confidence_threshold() -> float:
 def run():
     """Main entry point for the mnemo8 CLI."""
     parser = argparse.ArgumentParser(description="mnemo8 Personal Assistant")
+    parser.add_argument(
+        "--prompt",
+        type=str,
+        help="Send a single prompt and print the response inline (no TUI).",
+        default=None,
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     # Command: init
@@ -43,6 +54,9 @@ def run():
     cwd = os.getcwd()
 
     if args.command == "init":
+        if args.prompt:
+            print("--prompt is not valid with 'init' command.", file=sys.stderr)
+            sys.exit(2)
         init_workspace(cwd)
         return
 
@@ -71,12 +85,28 @@ def run():
             skill_confidence_threshold=_read_skill_confidence_threshold(),
         )
 
-        # Step 5: Start TUI interface
-        start_tui(state)
+        if args.prompt:
+            # Inline mode: single turn, print response to stdout, no TUI.
+            _run_inline(state, args.prompt.strip())
+        else:
+            # Step 5: Start TUI interface
+            start_tui(state)
 
     except Exception as e:
         print(f"Failed to start mnemo8: {e}", file=sys.stderr)
         sys.exit(1)
+
+
+def _run_inline(state: RuntimeState, prompt: str) -> None:
+    """Execute a single conversation turn and print the result to stdout."""
+    console = Console()
+    engine = ConversationEngine(state)
+    try:
+        response = asyncio.run(engine.send(prompt))
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {escape(str(e))}", highlight=False)
+        sys.exit(1)
+    console.print(response.display_text, highlight=False)
 
 
 if __name__ == "__main__":

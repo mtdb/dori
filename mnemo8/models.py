@@ -26,3 +26,4 @@ class RuntimeState:
     total_vram_mib: int | None = None
     debug: bool = False
     skill_confidence_threshold: float = 0.8
+    initial_prompt: str | None = None
