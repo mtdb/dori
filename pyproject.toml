@@ -3,25 +3,29 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "mnemo8"
+name = "dori"
 version = "0.1.0"
-description = "mnemo8 MVP Terminal Assistant"
+description = "Dori terminal assistant powered by the mnemo8 engine"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<4.0"
 dependencies = [
     "rich>=13.0.0",
     "ollama>=0.2.0",
     "textual>=0.52.0",
+    "pydantic>=2.0.0",
 ]
 
 [project.scripts]
-mnemo8 = "mnemo8.main:run"
+dori = "mnemo8.main:run"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff", "mypy", "pre-commit"]
 
 [tool.setuptools]
 packages = ["mnemo8"]
+
+[tool.poetry]
+packages = [{ include = "mnemo8" }]
 
 [tool.ruff]
 target-version = "py311"

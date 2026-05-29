@@ -72,3 +72,4 @@ coverage.xml
 # Project specific ignores
 .worktrees/
 docs/plans/
+.poetry-cache/

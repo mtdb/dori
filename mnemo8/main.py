@@ -2,14 +2,18 @@ import argparse
 import asyncio
 import os
 import sys
-from pathlib import Path
 
 from rich.console import Console
 from rich.markup import escape
 
 from mnemo8.chat import ConversationEngine
 from mnemo8.commands import init_workspace
-from mnemo8.loader import load_agents, load_available_vram, load_skills
+from mnemo8.loader import (
+    get_runtime_home,
+    load_agents,
+    load_available_vram,
+    load_skills,
+)
 from mnemo8.models import RuntimeState
 from mnemo8.tui import start_tui
 
@@ -35,9 +39,12 @@ def _read_skill_confidence_threshold() -> float:
 
 
 def run():
-    """Main entry point for the mnemo8 CLI."""
-    parser = argparse.ArgumentParser(description="mnemo8 Personal Assistant")
+    """Main entry point for the Dori CLI."""
+    parser = argparse.ArgumentParser(
+        description="Dori personal assistant powered by the mnemo8 engine"
+    )
     parser.add_argument(
+        "-p",
         "--prompt",
         type=str,
         help="Send a single prompt and print the response inline (no TUI).",
@@ -46,23 +53,21 @@ def run():
     subparsers = parser.add_subparsers(dest="command")
 
     # Command: init
-    subparsers.add_parser(
-        "init", help="Initialize the workspace with default agents and skills"
-    )
+    subparsers.add_parser("init", help="Initialize Dori with default agents and skills")
 
     args = parser.parse_args()
     cwd = os.getcwd()
 
     if args.command == "init":
         if args.prompt:
-            print("--prompt is not valid with 'init' command.", file=sys.stderr)
+            print("-p/--prompt is not valid with 'init' command.", file=sys.stderr)
             sys.exit(2)
         init_workspace(cwd)
         return
 
-    mnemo_home = Path.home() / ".mnemo8"
-    if not mnemo_home.is_dir():
-        print("~/.mnemo8 not found. Please run 'mnemo8 init' first.", file=sys.stderr)
+    runtime_home = get_runtime_home()
+    if not runtime_home.is_dir():
+        print("~/.dori not found. Please run 'dori init' first.", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -93,7 +98,7 @@ def run():
             start_tui(state)
 
     except Exception as e:
-        print(f"Failed to start mnemo8: {e}", file=sys.stderr)
+        print(f"Failed to start Dori: {e}", file=sys.stderr)
         sys.exit(1)
 
 

@@ -3,6 +3,8 @@ from pathlib import Path
 
 from rich.console import Console
 
+from mnemo8.loader import get_runtime_home
+
 console = Console()
 
 
@@ -22,25 +24,25 @@ def _resolve_boilerplate_dir(cwd: str) -> tuple[Path, Path, bool]:
 
 
 def init_workspace(cwd: str):
-    """Initialize ~/.mnemo8 using boilerplate files shipped with mnemo8."""
+    """Initialize ~/.dori using boilerplate files shipped with Dori."""
     repo_root, boilerplate_dir, used_fallback = _resolve_boilerplate_dir(cwd)
-    mnemo_home = Path.home() / ".mnemo8"
+    runtime_home = get_runtime_home()
 
     if used_fallback:
         console.print(
             f"[yellow]Using bundled boilerplate at {boilerplate_dir}[/yellow]"
         )
 
-    # Ensure ~/.mnemo8 exists
-    if not mnemo_home.exists():
-        mnemo_home.mkdir(parents=True)
-        console.print(f"[green]Created[/green] {mnemo_home}")
+    # Ensure ~/.dori exists
+    if not runtime_home.exists():
+        runtime_home.mkdir(parents=True)
+        console.print(f"[green]Created[/green] {runtime_home}")
     else:
-        console.print(f"[yellow]Using existing[/yellow] {mnemo_home}")
+        console.print(f"[yellow]Using existing[/yellow] {runtime_home}")
 
     # Copy AGENTS.md
     agents_src = boilerplate_dir / "AGENTS.md"
-    agents_dest = mnemo_home / "AGENTS.md"
+    agents_dest = runtime_home / "AGENTS.md"
     if agents_dest.exists():
         console.print(f"[yellow]Skipped[/yellow] {agents_dest.name} (already exists)")
     else:
@@ -54,19 +56,19 @@ def init_workspace(cwd: str):
 
     # Copy scripts/
     scripts_src = boilerplate_dir / "scripts"
-    scripts_dest = mnemo_home / "scripts"
+    scripts_dest = runtime_home / "scripts"
     if scripts_src.is_dir():
         scripts_dest.mkdir(exist_ok=True)
         for src in scripts_src.glob("*.py"):
             dest = scripts_dest / src.name
             if dest.exists():
                 console.print(
-                    f"[yellow]Skipped[/yellow] {dest.relative_to(mnemo_home)} (already exists)"
+                    f"[yellow]Skipped[/yellow] {dest.relative_to(runtime_home)} (already exists)"
                 )
             else:
                 shutil.copy2(src, dest)
                 console.print(
-                    f"[green]Copied[/green] {src.relative_to(repo_root)} -> {dest.relative_to(mnemo_home)}"
+                    f"[green]Copied[/green] {src.relative_to(repo_root)} -> {dest.relative_to(runtime_home)}"
                 )
     else:
         console.print(
@@ -75,7 +77,7 @@ def init_workspace(cwd: str):
 
     # Copy skills/
     skills_src = boilerplate_dir / "skills"
-    skills_dest = mnemo_home / "skills"
+    skills_dest = runtime_home / "skills"
     if skills_src.is_dir():
         for src in skills_src.rglob("*.md"):
             relative = src.relative_to(skills_src)
@@ -83,16 +85,16 @@ def init_workspace(cwd: str):
             dest.parent.mkdir(parents=True, exist_ok=True)
             if dest.exists():
                 console.print(
-                    f"[yellow]Skipped[/yellow] {dest.relative_to(mnemo_home)} (already exists)"
+                    f"[yellow]Skipped[/yellow] {dest.relative_to(runtime_home)} (already exists)"
                 )
             else:
                 shutil.copy2(src, dest)
                 console.print(
-                    f"[green]Copied[/green] {src.relative_to(repo_root)} -> {dest.relative_to(mnemo_home)}"
+                    f"[green]Copied[/green] {src.relative_to(repo_root)} -> {dest.relative_to(runtime_home)}"
                 )
     else:
         console.print(
             f"[yellow]No boilerplate skills/ directory found at {skills_src}[/yellow]"
         )
 
-    console.print("\n[bold cyan]mnemo8 ~/.mnemo8 initialized successfully![/bold cyan]")
+    console.print("\n[bold cyan]Dori ~/.dori initialized successfully![/bold cyan]")

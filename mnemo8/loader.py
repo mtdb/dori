@@ -3,11 +3,18 @@ from pathlib import Path
 
 from mnemo8.models import Skill
 
+RUNTIME_HOME_DIRNAME = ".dori"
+
+
+def get_runtime_home() -> Path:
+    """Return Dori's public runtime home directory."""
+    return Path.home() / RUNTIME_HOME_DIRNAME
+
 
 def load_agents() -> str | None:
-    """Load AGENTS.md from the user's ~/.mnemo8 directory."""
-    mnemo_home = Path.home() / ".mnemo8"
-    agents_path = mnemo_home / "AGENTS.md"
+    """Load AGENTS.md from the user's ~/.dori directory."""
+    runtime_home = get_runtime_home()
+    agents_path = runtime_home / "AGENTS.md"
     if not agents_path.is_file():
         return None
 
@@ -22,9 +29,9 @@ def load_agents() -> str | None:
 
 
 def load_skills() -> list[Skill]:
-    """Load skills from `~/.mnemo8/skills`, building a tree from subdirectories."""
-    mnemo_home = Path.home() / ".mnemo8"
-    skills_dir = mnemo_home / "skills"
+    """Load skills from `~/.dori/skills`, building a tree from subdirectories."""
+    runtime_home = get_runtime_home()
+    skills_dir = runtime_home / "skills"
     if not skills_dir.is_dir():
         return []
     return _load_node(skills_dir, skills_dir)

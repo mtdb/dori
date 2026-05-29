@@ -1,4 +1,4 @@
-# Creating New Skills for Mnemo8
+# Creating New Skills for Dori
 
 This guide covers how to add a skill to the boilerplate — from the skill definition file to the Python handler script.
 

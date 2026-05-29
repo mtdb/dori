@@ -1,1 +1,1 @@
-"""mnemo8 CLI Assistant"""
+"""Dori CLI powered by the mnemo8 engine."""
