@@ -16,7 +16,9 @@ from dataclasses import dataclass
 
 import ollama
 
+from mnemo8.loader import get_runtime_home
 from mnemo8.models import RuntimeState
+from mnemo8.schemas import validate_skill_payload
 
 # ---------------------------------------------------------------------------
 # Skill payload parsing
@@ -105,7 +107,10 @@ def strip_skill_payload(content: str) -> str:
 
 
 def build_system_prompt(state: RuntimeState) -> str:
-    prompt = "You are mnemo8, a helpful personal assistant CLI running on the user's terminal.\n"
+    prompt = (
+        "You are Dori, a helpful personal assistant CLI running on the user's terminal.\n"
+        "Dori is powered by the mnemo8 engine.\n"
+    )
     if state.agents_content:
         prompt += f"\nHere is information about your agent configuration:\n{state.agents_content}\n"
     if state.skills:
@@ -113,7 +118,8 @@ def build_system_prompt(state: RuntimeState) -> str:
         prompt += (
             "IMPORTANT: When a skill clearly matches the user's request, respond with a single JSON object only. "
             "Do not add markdown, explanation, or extra prose. The JSON must include the exact skill arguments "
-            "plus a numeric 'confidence' field between 0.0 and 1.0. Only emit skill JSON when confidence is at "
+            "plus a numeric 'confidence' field between 0.0 and 1.0 and a 'raw_text' field containing the user's message verbatim. "
+            "Only emit skill JSON when confidence is at "
             f"least {state.skill_confidence_threshold:.2f}; otherwise answer normally or ask a short clarifying question.\n"
         )
         for skill in state.skills:
@@ -145,14 +151,32 @@ def _build_routing_messages(user_message: str, candidates: list) -> list[dict]:
     ]
 
 
+def _build_extraction_messages(
+    user_message: str, skill_name: str, skill_content: str
+) -> list[dict]:
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You extract structured arguments for a single skill.\n"
+                "Respond with ONE JSON object only (no prose, no markdown).\n"
+                "The JSON must include: 'skill', 'confidence' (0.0-1.0), and 'raw_text' (user message verbatim).\n\n"
+                f"Skill name: {skill_name}\n\n"
+                f"Skill definition:\n{skill_content}\n"
+            ),
+        },
+        {"role": "user", "content": user_message},
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Skill execution
 # ---------------------------------------------------------------------------
 
 
 def run_skill(skill_name: str, skill_json: dict) -> str:
-    mnemo_home = os.path.expanduser("~/.mnemo8")
-    script_path = os.path.join(mnemo_home, "scripts", f"{skill_name}.py")
+    runtime_home = get_runtime_home()
+    script_path = os.path.join(runtime_home, "scripts", f"{skill_name}.py")
     if not os.path.isfile(script_path):
         return f"[red]Script for skill '{skill_name}' not found[/red]"
     try:
@@ -219,7 +243,45 @@ class ConversationEngine:
             if matched is None:
                 return None
             current = matched
+        # Router descent only selects a leaf. Argument extraction happens in the main turn.
         return {"skill": current.name, "confidence": 1.0, "raw_text": user_message}
+
+    async def _extract_payload_for_skill(
+        self, user_message: str, skill_name: str
+    ) -> dict | None:
+        """Ask the model to produce a full payload for a specific leaf skill."""
+
+        def _find_skill(skills) -> object | None:
+            for s in skills:
+                if s.name == skill_name:
+                    return s
+                if getattr(s, "children", None):
+                    found = _find_skill(s.children)
+                    if found is not None:
+                        return found
+            return None
+
+        skill_obj = _find_skill(self.state.skills)
+        if skill_obj is None:
+            return None
+
+        messages = _build_extraction_messages(
+            user_message, skill_name, skill_obj.content
+        )
+        try:
+            response = await asyncio.to_thread(
+                ollama.chat, model=self.state.model, messages=messages
+            )
+        except Exception:
+            return None
+
+        payload = parse_skill(
+            response["message"]["content"], self.state.skill_confidence_threshold
+        )
+        if payload is None:
+            return None
+        payload.setdefault("raw_text", user_message)
+        return payload
 
     async def send(self, user_input: str) -> ChatResponse:
         """
@@ -243,12 +305,51 @@ class ConversationEngine:
         # Resolve skill: descend router tree if the LLM picked a non-leaf skill
         resolved_skill = parse_skill(content, self.state.skill_confidence_threshold)
         if resolved_skill:
+            # Enforce raw_text in every payload. This keeps scripts deterministic and supports logging.
+            resolved_skill.setdefault("raw_text", user_input)
             matched = next(
                 (s for s in self.state.skills if s.name == resolved_skill["skill"]),
                 None,
             )
             if matched and matched.is_router:
-                resolved_skill = await self._descend_router(user_input, matched)
+                selected_leaf = await self._descend_router(user_input, matched)
+                if selected_leaf is None:
+                    resolved_skill = None
+                else:
+                    resolved_skill = await self._extract_payload_for_skill(
+                        user_input, selected_leaf["skill"]
+                    )
+
+        # If the model selected a known leaf but omitted required fields, try a single extraction pass.
+        if resolved_skill:
+
+            def _leaf_names(skills) -> set[str]:
+                names: set[str] = set()
+                for s in skills:
+                    if s.is_router:
+                        names |= _leaf_names(s.children)
+                    else:
+                        names.add(s.name)
+                return names
+
+            normalized, _ = validate_skill_payload(resolved_skill)
+            if normalized is None and resolved_skill.get("skill") in _leaf_names(
+                self.state.skills
+            ):
+                extracted = await self._extract_payload_for_skill(
+                    user_input, resolved_skill["skill"]
+                )
+                if extracted is not None:
+                    resolved_skill = extracted
+
+        # Validate payload (schema-first). On failure, do not run scripts; ask for one missing detail.
+        clarify_message: str | None = None
+        if resolved_skill:
+            normalized, clarify_message = validate_skill_payload(resolved_skill)
+            if normalized is None:
+                resolved_skill = None
+            else:
+                resolved_skill = normalized
 
         # Execute skill and build display text
         skill_output: str | None = None
@@ -263,7 +364,12 @@ class ConversationEngine:
             if skill_output:
                 display_text += f"\n{skill_output}"
         else:
-            display_text = content if self.state.debug else strip_skill_payload(content)
+            if clarify_message:
+                display_text = clarify_message
+            else:
+                display_text = (
+                    content if self.state.debug else strip_skill_payload(content)
+                )
             if not display_text.strip():
                 display_text = "I need one more detail before I can choose a skill."
 

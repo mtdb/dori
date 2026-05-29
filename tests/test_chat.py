@@ -78,7 +78,8 @@ def test_parse_skill_empty_string():
 def test_build_system_prompt_base():
     state = RuntimeState(cwd="/tmp")
     prompt = build_system_prompt(state)
-    assert "mnemo8" in prompt
+    assert "You are Dori" in prompt
+    assert "mnemo8 engine" in prompt
 
 
 def test_build_system_prompt_includes_skill_content():
@@ -233,6 +234,28 @@ def test_engine_send_returns_fallback_when_display_is_empty():
     assert (
         response.display_text == "I need one more detail before I can choose a skill."
     )
+
+
+def test_engine_send_returns_clarify_when_required_fields_missing():
+    state = RuntimeState(
+        cwd="/tmp",
+        skill_confidence_threshold=0.8,
+        skills=[
+            Skill(name="calendar", path="skills/calendar.md", content="# Calendar")
+        ],
+    )
+    engine = ConversationEngine(state)
+
+    raw = '{"skill": "calendar", "confidence": 0.95}'
+    with (
+        patch("mnemo8.chat.ollama.chat", return_value=_make_ollama_response(raw)),
+        patch("mnemo8.chat.run_skill") as mock_run,
+    ):
+        response = asyncio.run(engine.send("Schedule team sync tomorrow"))
+
+    mock_run.assert_not_called()
+    assert response.resolved_skill is None
+    assert response.display_text.startswith("I need ")
 
 
 # ---------------------------------------------------------------------------
