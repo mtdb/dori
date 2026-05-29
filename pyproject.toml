@@ -43,3 +43,8 @@ disallow_untyped_defs = false
 
 [tool.pre-commit]
 yaml_version = "2.0.0"
+
+[tool.pytest.ini_options]
+markers = [
+    "integration: tests that call external/local services such as Ollama",
+]

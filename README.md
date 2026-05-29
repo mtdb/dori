@@ -79,3 +79,22 @@ Dori stores its runtime state in `~/.dori`:
 - Public packaging and CLI surface are `dori`.
 - Internal modules, imports, and tests still use `mnemo8`.
 - Boilerplate and onboarding text should refer to Dori unless they are describing the engine explicitly.
+
+## Tests
+
+Run the default test suite:
+
+```bash
+poetry run pytest
+```
+
+Integration tests that call Ollama are skipped by default. To run them, make sure
+Ollama is running and `llama3.1:8b` is installed:
+
+```bash
+ollama pull llama3.1:8b
+DORI_RUN_OLLAMA_INTEGRATION=1 poetry run pytest tests/test_ollama_integration.py
+```
+
+The Ollama integration tests use `llama3.1:8b` with `seed: 42` and
+`temperature: 0` for predictable routing checks.

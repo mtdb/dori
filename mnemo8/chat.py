@@ -20,6 +20,15 @@ from mnemo8.loader import get_runtime_home
 from mnemo8.models import RuntimeState
 from mnemo8.schemas import validate_skill_payload
 
+
+def _chat_with_model(state: RuntimeState, messages: list[dict]) -> dict:
+    return ollama.chat(
+        model=state.model,
+        messages=messages,
+        options=state.ollama_options or None,
+    )
+
+
 # ---------------------------------------------------------------------------
 # Skill payload parsing
 # ---------------------------------------------------------------------------
@@ -228,7 +237,7 @@ class ConversationEngine:
             routing_messages = _build_routing_messages(user_message, current.children)
             try:
                 response = await asyncio.to_thread(
-                    ollama.chat, model=self.state.model, messages=routing_messages
+                    _chat_with_model, self.state, routing_messages
                 )
             except Exception:
                 return None
@@ -269,9 +278,7 @@ class ConversationEngine:
             user_message, skill_name, skill_obj.content
         )
         try:
-            response = await asyncio.to_thread(
-                ollama.chat, model=self.state.model, messages=messages
-            )
+            response = await asyncio.to_thread(_chat_with_model, self.state, messages)
         except Exception:
             return None
 
@@ -293,7 +300,7 @@ class ConversationEngine:
         self.messages.append({"role": "user", "content": user_input})
         try:
             response = await asyncio.to_thread(
-                ollama.chat, model=self.state.model, messages=self.messages
+                _chat_with_model, self.state, self.messages
             )
         except Exception:
             self.messages.pop()

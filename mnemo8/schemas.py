@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field, ValidationError, model_validator
 
 
 class SkillPayload(BaseModel):
@@ -58,6 +58,19 @@ class CodePayload(SkillPayload):
 class GitPayload(SkillPayload):
     topic: str = Field(min_length=1)
     context: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def fill_topic_from_model_aliases(cls, data: Any) -> Any:
+        if not isinstance(data, dict) or data.get("topic"):
+            return data
+
+        for field in ("command", "query", "question", "raw_text"):
+            value = data.get(field)
+            if isinstance(value, str) and value.strip():
+                return {**data, "topic": value.strip().lower()}
+
+        return data
 
 
 class DockerPayload(SkillPayload):

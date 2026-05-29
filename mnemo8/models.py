@@ -1,4 +1,5 @@
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
@@ -20,6 +21,7 @@ class RuntimeState:
     skills: list[Skill] = field(default_factory=list)
     chat_history: list[str] = field(default_factory=list)
     model: str = "llama3.1:8b"
+    ollama_options: dict[str, Any] = field(default_factory=dict)
     available_vram_mib: int | None = None
     total_vram_mib: int | None = None
     debug: bool = False
