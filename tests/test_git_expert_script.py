@@ -1,4 +1,7 @@
 import importlib.util
+import json
+import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -163,7 +166,7 @@ def test_generate_answer_returns_model_content(monkeypatch):
             }
         }
 
-    monkeypatch.setattr(git_script.ollama, "chat", fake_chat)
+    monkeypatch.setattr(git_script, "ollama", SimpleNamespace(chat=fake_chat))
 
     answer = git_script.generate_answer(
         topic="rebase",
@@ -188,7 +191,7 @@ def test_generate_answer_abstains_on_empty_or_unsafe_model_output(monkeypatch):
     def fake_chat(model, messages, options):
         return {"message": {"content": next(responses)}}
 
-    monkeypatch.setattr(git_script.ollama, "chat", fake_chat)
+    monkeypatch.setattr(git_script, "ollama", SimpleNamespace(chat=fake_chat))
 
     assert (
         git_script.generate_answer(
@@ -230,6 +233,26 @@ def test_answer_payload_abstains_when_topic_is_unknown():
     }
 
     assert git_script.answer_payload(payload) == git_script.ABSTENTION_MESSAGE
+
+
+def test_script_abstains_for_unknown_topic_when_run_directly():
+    git_script = load_git_script()
+    payload = {
+        "skill": "git",
+        "confidence": 0.95,
+        "topic": "configure my editor theme",
+        "raw_text": "How do I configure my editor theme?",
+    }
+
+    result = subprocess.run(
+        [sys.executable, str(GIT_SCRIPT), json.dumps(payload)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == git_script.ABSTENTION_MESSAGE
 
 
 def test_answer_payload_uses_raw_text_when_topic_is_missing(monkeypatch):

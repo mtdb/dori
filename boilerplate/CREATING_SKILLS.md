@@ -165,6 +165,24 @@ Each sub-skill (e.g. `skills/search/news.md`) follows the same structure as a to
 
 ---
 
+## Expert Skills
+
+Use an expert skill when a domain benefits from a handoff to a constrained
+specialist, but does not need an autonomous agent.
+
+Expert skills should:
+
+- State the evidence source clearly.
+- Keep payloads flat and easy for small local models.
+- Avoid side effects unless the skill explicitly exists to perform an action.
+- Return a clear abstention message when evidence is missing or insufficient.
+- Prefer English prompts and examples for local model reliability.
+
+The Git expert skill is the reference pattern: it answers from local Git
+documentation only and does not inspect or modify repositories.
+
+---
+
 ## Checklist for a New Skill
 
 - [ ] **Skill file** created at `skills/<name>.md` (or `skills/<group>/<name>.md` for nested)

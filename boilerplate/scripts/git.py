@@ -1,14 +1,15 @@
+import importlib
 import json
+import os
 import re
 import subprocess
 import sys
-
-import ollama
 
 ABSTENTION_MESSAGE = (
     "🌿 [Git]: I could not find enough local documentation to answer safely."
 )
 EXPERT_MODEL_OPTIONS = {"temperature": 0}
+ollama = None
 
 SUPPORTED_COMMANDS = (
     "cherry-pick",
@@ -177,6 +178,28 @@ def _is_usable_answer(answer: str, topic: str) -> bool:
     return True
 
 
+def _load_ollama():
+    global ollama
+    if ollama is not None:
+        return ollama
+
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    original_path = list(sys.path)
+    try:
+        sys.path = [
+            path
+            for path in sys.path
+            if os.path.abspath(path or os.getcwd()) != script_dir
+        ]
+        ollama = importlib.import_module("ollama")
+    except Exception:
+        return None
+    finally:
+        sys.path = original_path
+
+    return ollama
+
+
 def generate_answer(
     topic: str,
     raw_text: str,
@@ -185,8 +208,12 @@ def generate_answer(
     model: str = "llama3.1:8b",
 ) -> str:
     messages = build_expert_messages(topic, raw_text, context, docs)
+    ollama_client = _load_ollama()
+    if ollama_client is None:
+        return ABSTENTION_MESSAGE
+
     try:
-        response = ollama.chat(
+        response = ollama_client.chat(
             model=model,
             messages=messages,
             options=EXPERT_MODEL_OPTIONS,

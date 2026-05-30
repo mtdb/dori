@@ -173,6 +173,17 @@ has a specific intent, clear field guidance, realistic JSON examples, a `skill`
 field matching the filename, a same-named script, and deterministic stdout. The
 skill guides the model; the script executes.
 
+## Expert skills
+
+An expert skill is a normal leaf skill with a stricter script contract: it
+answers from local evidence and abstains when evidence is insufficient. Expert
+skills are not autonomous agents. They do not get a separate runtime, memory, or
+tool loop.
+
+The bundled Git skill is the first expert skill. It answers read-only Git
+questions from local Git documentation and returns a safe abstention message
+when local documentation is unavailable or insufficient.
+
 ## Modes and variables
 
 ```bash
