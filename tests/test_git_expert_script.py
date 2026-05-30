@@ -217,3 +217,47 @@ def test_generate_answer_abstains_on_empty_or_unsafe_model_output(monkeypatch):
         )
         == git_script.ABSTENTION_MESSAGE
     )
+
+
+def test_answer_payload_abstains_when_topic_is_unknown():
+    git_script = load_git_script()
+
+    payload = {
+        "skill": "git",
+        "confidence": 0.95,
+        "topic": "configure my editor theme",
+        "raw_text": "How do I configure my editor theme?",
+    }
+
+    assert git_script.answer_payload(payload) == git_script.ABSTENTION_MESSAGE
+
+
+def test_answer_payload_uses_raw_text_when_topic_is_missing(monkeypatch):
+    git_script = load_git_script()
+
+    monkeypatch.setattr(
+        git_script, "retrieve_local_docs", lambda command: "usage: git diff"
+    )
+    monkeypatch.setattr(
+        git_script,
+        "generate_answer",
+        lambda topic, raw_text, context, docs: f"🌿 [Git - {topic}]\nSummary: ok",
+    )
+
+    payload = {
+        "skill": "git",
+        "confidence": 0.95,
+        "raw_text": "How do I show changes before committing?",
+    }
+
+    assert git_script.answer_payload(payload).startswith("🌿 [Git - diff]")
+
+
+def test_main_prints_abstention_for_invalid_json(capsys, monkeypatch):
+    git_script = load_git_script()
+
+    monkeypatch.setattr("sys.argv", ["git.py", "{not-json"])
+
+    git_script.main()
+
+    assert capsys.readouterr().out.strip() == git_script.ABSTENTION_MESSAGE

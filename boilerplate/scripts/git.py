@@ -200,18 +200,40 @@ def generate_answer(
     return answer
 
 
+def answer_payload(payload: dict) -> str:
+    topic_text = str(payload.get("topic") or payload.get("raw_text") or "")
+    command = normalize_topic(topic_text)
+    if command is None:
+        return ABSTENTION_MESSAGE
+
+    docs = retrieve_local_docs(command)
+    if not docs:
+        return ABSTENTION_MESSAGE
+
+    return generate_answer(
+        topic=command,
+        raw_text=str(payload.get("raw_text") or topic_text),
+        context=payload.get("context"),
+        docs=docs,
+    )
+
+
 def main():
     if len(sys.argv) < 2:
-        print("Error: Missing JSON payload")
-        sys.exit(1)
+        print(ABSTENTION_MESSAGE)
+        return
 
     try:
-        json.loads(sys.argv[1])
+        payload = json.loads(sys.argv[1])
     except json.JSONDecodeError:
-        print("Error: Invalid JSON payload provided to git script.")
-        sys.exit(1)
+        print(ABSTENTION_MESSAGE)
+        return
 
-    print(ABSTENTION_MESSAGE)
+    if not isinstance(payload, dict):
+        print(ABSTENTION_MESSAGE)
+        return
+
+    print(answer_payload(payload))
 
 
 if __name__ == "__main__":
