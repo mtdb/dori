@@ -36,23 +36,9 @@ class WebPayload(SkillPayload):
     query: str = Field(min_length=1)
 
 
-class ImagesPayload(SkillPayload):
-    query: str = Field(min_length=1)
-
-
 class NewsPayload(SkillPayload):
     query: str = Field(min_length=1)
     since: str | None = None
-
-
-class MapsPayload(SkillPayload):
-    place: str = Field(min_length=1)
-    directions_from: str | None = None
-
-
-class CodePayload(SkillPayload):
-    query: str = Field(min_length=1)
-    language: str | None = None
 
 
 class GitPayload(SkillPayload):
@@ -87,10 +73,7 @@ _SCHEMAS: dict[str, type[SkillPayload]] = {
     "reminders": RemindersPayload,
     "calendar": CalendarPayload,
     "web": WebPayload,
-    "images": ImagesPayload,
     "news": NewsPayload,
-    "maps": MapsPayload,
-    "code": CodePayload,
     "git": GitPayload,
     "docker": DockerPayload,
     "commit": CommitPayload,
