@@ -173,12 +173,27 @@ def test_generate_answer_returns_model_content(monkeypatch):
 
 def test_generate_answer_abstains_on_empty_or_unsafe_model_output(monkeypatch):
     git_script = load_git_script()
+    responses = iter(
+        [
+            "",
+            "Summary: Rebase replays commits.\nSteps:\n1. Run git rebase.",
+        ]
+    )
 
     def fake_chat(model, messages, options):
-        return {"message": {"content": ""}}
+        return {"message": {"content": next(responses)}}
 
     monkeypatch.setattr(git_script.ollama, "chat", fake_chat)
 
+    assert (
+        git_script.generate_answer(
+            topic="rebase",
+            raw_text="How do I rebase?",
+            context=None,
+            docs="usage: git rebase [options]",
+        )
+        == git_script.ABSTENTION_MESSAGE
+    )
     assert (
         git_script.generate_answer(
             topic="rebase",
