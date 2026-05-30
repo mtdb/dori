@@ -33,3 +33,9 @@ def test_normalize_topic_returns_none_for_unknown_topics():
     git_script = load_git_script()
 
     assert git_script.normalize_topic("configure my editor theme") is None
+
+
+def test_normalize_topic_prefers_stable_topic_for_multi_command_phrasing():
+    git_script = load_git_script()
+
+    assert git_script.normalize_topic("switch branch") == "branch"

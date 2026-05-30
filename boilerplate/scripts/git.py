@@ -6,7 +6,7 @@ ABSTENTION_MESSAGE = (
     "🌿 [Git]: I could not find enough local documentation to answer safely."
 )
 
-SUPPORTED_COMMANDS = {
+SUPPORTED_COMMANDS = (
     "cherry-pick",
     "rebase",
     "stash",
@@ -23,7 +23,7 @@ SUPPORTED_COMMANDS = {
     "checkout",
     "switch",
     "restore",
-}
+)
 
 PHRASE_COMMANDS: tuple[tuple[tuple[str, ...], str], ...] = (
     (("squash", "commit"), "rebase"),
