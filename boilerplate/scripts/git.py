@@ -84,8 +84,18 @@ def _run_doc_command(cmd: list[str]) -> str | None:
         return None
 
     output = result.stdout.strip()
-    if result.returncode != 0 or not output:
+    if not output:
         return None
+
+    is_short_help = (
+        len(cmd) == 3
+        and cmd[0] == "git"
+        and cmd[1] in SUPPORTED_COMMANDS
+        and cmd[2] == "-h"
+    )
+    if result.returncode != 0 and not is_short_help:
+        return None
+
     return output[:MAX_DOC_CHARS]
 
 

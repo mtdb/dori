@@ -72,7 +72,7 @@ def test_retrieve_local_docs_falls_back_to_short_help_then_man(monkeypatch):
             return SimpleNamespace(returncode=1, stdout="", stderr="missing")
         if cmd == ["git", "stash", "-h"]:
             return SimpleNamespace(
-                returncode=0, stdout="usage: git stash list", stderr=""
+                returncode=129, stdout="usage: git stash list", stderr=""
             )
         raise AssertionError(f"unexpected command: {cmd}")
 
@@ -82,6 +82,32 @@ def test_retrieve_local_docs_falls_back_to_short_help_then_man(monkeypatch):
 
     assert docs == "usage: git stash list"
     assert calls == [["git", "help", "stash"], ["git", "stash", "-h"]]
+
+
+def test_retrieve_local_docs_falls_back_to_man_when_git_help_fails(monkeypatch):
+    git_script = load_git_script()
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, capture_output, text, timeout, check):
+        calls.append(cmd)
+        if cmd == ["git", "help", "tag"]:
+            return SimpleNamespace(returncode=1, stdout="", stderr="missing")
+        if cmd == ["git", "tag", "-h"]:
+            return SimpleNamespace(returncode=129, stdout="", stderr="usage")
+        if cmd == ["man", "git-tag"]:
+            return SimpleNamespace(returncode=0, stdout="GIT-TAG(1)", stderr="")
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    monkeypatch.setattr(git_script.subprocess, "run", fake_run)
+
+    docs = git_script.retrieve_local_docs("tag")
+
+    assert docs == "GIT-TAG(1)"
+    assert calls == [
+        ["git", "help", "tag"],
+        ["git", "tag", "-h"],
+        ["man", "git-tag"],
+    ]
 
 
 def test_retrieve_local_docs_returns_none_when_docs_are_missing(monkeypatch):
