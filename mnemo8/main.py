@@ -8,6 +8,7 @@ from rich.markup import escape
 
 from mnemo8.chat import ConversationEngine
 from mnemo8.commands import init_workspace
+from mnemo8.commit_workflow import run_interactive as run_commit_interactive
 from mnemo8.loader import (
     get_runtime_home,
     load_agents,
@@ -54,6 +55,9 @@ def run():
 
     # Command: init
     subparsers.add_parser("init", help="Initialize Dori with default agents and skills")
+    subparsers.add_parser(
+        "commit", help="Create conventional commits from local changes"
+    )
 
     args = parser.parse_args()
     cwd = os.getcwd()
@@ -64,6 +68,12 @@ def run():
             sys.exit(2)
         init_workspace(cwd)
         return
+
+    if args.command == "commit":
+        if args.prompt:
+            print("-p/--prompt is not valid with 'commit' command.", file=sys.stderr)
+            sys.exit(2)
+        sys.exit(run_commit_interactive(cwd))
 
     runtime_home = get_runtime_home()
     if not runtime_home.is_dir():

@@ -77,6 +77,12 @@ class DockerPayload(SkillPayload):
     question: str = Field(min_length=1)
 
 
+class CommitPayload(SkillPayload):
+    message: str | None = None
+    type: str | None = None
+    scope: str | None = None
+
+
 _SCHEMAS: dict[str, type[SkillPayload]] = {
     "reminders": RemindersPayload,
     "calendar": CalendarPayload,
@@ -87,6 +93,7 @@ _SCHEMAS: dict[str, type[SkillPayload]] = {
     "code": CodePayload,
     "git": GitPayload,
     "docker": DockerPayload,
+    "commit": CommitPayload,
 }
 
 
