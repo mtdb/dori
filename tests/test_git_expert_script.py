@@ -1,5 +1,6 @@
 import importlib.util
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[1]
 GIT_SCRIPT = ROOT / "boilerplate" / "scripts" / "git.py"
@@ -39,3 +40,56 @@ def test_normalize_topic_prefers_stable_topic_for_multi_command_phrasing():
     git_script = load_git_script()
 
     assert git_script.normalize_topic("switch branch") == "branch"
+
+
+def test_retrieve_local_docs_uses_only_read_only_help_commands(monkeypatch):
+    git_script = load_git_script()
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, capture_output, text, timeout, check):
+        calls.append(cmd)
+        return SimpleNamespace(
+            returncode=0,
+            stdout="usage: git rebase [options]\nReplay commits on top of another base tip.",
+            stderr="",
+        )
+
+    monkeypatch.setattr(git_script.subprocess, "run", fake_run)
+
+    docs = git_script.retrieve_local_docs("rebase")
+
+    assert "Replay commits" in docs
+    assert calls == [["git", "help", "rebase"]]
+
+
+def test_retrieve_local_docs_falls_back_to_short_help_then_man(monkeypatch):
+    git_script = load_git_script()
+    calls: list[list[str]] = []
+
+    def fake_run(cmd, capture_output, text, timeout, check):
+        calls.append(cmd)
+        if cmd == ["git", "help", "stash"]:
+            return SimpleNamespace(returncode=1, stdout="", stderr="missing")
+        if cmd == ["git", "stash", "-h"]:
+            return SimpleNamespace(
+                returncode=0, stdout="usage: git stash list", stderr=""
+            )
+        raise AssertionError(f"unexpected command: {cmd}")
+
+    monkeypatch.setattr(git_script.subprocess, "run", fake_run)
+
+    docs = git_script.retrieve_local_docs("stash")
+
+    assert docs == "usage: git stash list"
+    assert calls == [["git", "help", "stash"], ["git", "stash", "-h"]]
+
+
+def test_retrieve_local_docs_returns_none_when_docs_are_missing(monkeypatch):
+    git_script = load_git_script()
+
+    def fake_run(cmd, capture_output, text, timeout, check):
+        return SimpleNamespace(returncode=1, stdout="", stderr="missing")
+
+    monkeypatch.setattr(git_script.subprocess, "run", fake_run)
+
+    assert git_script.retrieve_local_docs("restore") is None

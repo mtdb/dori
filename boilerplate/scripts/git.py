@@ -1,5 +1,6 @@
 import json
 import re
+import subprocess
 import sys
 
 ABSTENTION_MESSAGE = (
@@ -43,6 +44,9 @@ PHRASE_COMMANDS: tuple[tuple[tuple[str, ...], str], ...] = (
     (("move", "work"), "stash"),
 )
 
+DOC_TIMEOUT_SECONDS = 3
+MAX_DOC_CHARS = 6000
+
 
 def _tokens(text: str) -> set[str]:
     normalized = text.lower().replace("_", "-")
@@ -63,6 +67,42 @@ def normalize_topic(topic: str) -> str | None:
     for command in SUPPORTED_COMMANDS:
         if command in words:
             return command
+
+    return None
+
+
+def _run_doc_command(cmd: list[str]) -> str | None:
+    try:
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=DOC_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return None
+
+    output = result.stdout.strip()
+    if result.returncode != 0 or not output:
+        return None
+    return output[:MAX_DOC_CHARS]
+
+
+def retrieve_local_docs(command: str) -> str | None:
+    if command not in SUPPORTED_COMMANDS:
+        return None
+
+    commands = [
+        ["git", "help", command],
+        ["git", command, "-h"],
+        ["man", f"git-{command}"],
+    ]
+
+    for cmd in commands:
+        docs = _run_doc_command(cmd)
+        if docs:
+            return docs
 
     return None
 
