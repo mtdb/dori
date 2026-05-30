@@ -3,9 +3,12 @@ import re
 import subprocess
 import sys
 
+import ollama
+
 ABSTENTION_MESSAGE = (
     "🌿 [Git]: I could not find enough local documentation to answer safely."
 )
+EXPERT_MODEL_OPTIONS = {"temperature": 0}
 
 SUPPORTED_COMMANDS = (
     "cherry-pick",
@@ -115,6 +118,79 @@ def retrieve_local_docs(command: str) -> str | None:
             return docs
 
     return None
+
+
+def build_expert_messages(
+    topic: str,
+    raw_text: str,
+    context: str | None,
+    docs: str,
+) -> list[dict[str, str]]:
+    user_lines = [
+        f"User question: {raw_text}",
+        f"Normalized topic: {topic}",
+    ]
+    if context:
+        user_lines.append(f"User-provided context: {context}")
+    user_lines.append("Local Git documentation fragments:")
+    user_lines.append(docs)
+
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a read-only Git expert.\n"
+                "Answer only from the provided local Git documentation fragments.\n"
+                "Do not invent commands, flags, effects, or examples.\n"
+                "If the fragments are not enough, say that you could not find "
+                "enough local documentation to answer safely.\n"
+                "Do not run Git commands.\n"
+                "Do not assume the state of the user's repository.\n"
+                "Give safe steps and mention risks only when supported by the "
+                "documentation.\n"
+                "Write in English.\n"
+                "Use this format:\n"
+                f"🌿 [Git - {topic}]\n"
+                "Summary: ...\n"
+                "Steps:\n"
+                "1. ...\n"
+                "Safety notes:\n"
+                "- ...\n"
+            ),
+        },
+        {"role": "user", "content": "\n\n".join(user_lines)},
+    ]
+
+
+def _is_usable_answer(answer: str) -> bool:
+    if not answer.strip():
+        return False
+    if "🌿 [Git" not in answer:
+        return False
+    return True
+
+
+def generate_answer(
+    topic: str,
+    raw_text: str,
+    context: str | None,
+    docs: str,
+    model: str = "llama3.1:8b",
+) -> str:
+    messages = build_expert_messages(topic, raw_text, context, docs)
+    try:
+        response = ollama.chat(
+            model=model,
+            messages=messages,
+            options=EXPERT_MODEL_OPTIONS,
+        )
+    except Exception:
+        return ABSTENTION_MESSAGE
+
+    answer = response.get("message", {}).get("content", "").strip()
+    if not _is_usable_answer(answer):
+        return ABSTENTION_MESSAGE
+    return answer
 
 
 def main():

@@ -119,3 +119,72 @@ def test_retrieve_local_docs_returns_none_when_docs_are_missing(monkeypatch):
     monkeypatch.setattr(git_script.subprocess, "run", fake_run)
 
     assert git_script.retrieve_local_docs("restore") is None
+
+
+def test_build_expert_prompt_is_english_only_and_evidence_scoped():
+    git_script = load_git_script()
+
+    messages = git_script.build_expert_messages(
+        topic="rebase",
+        raw_text="How do I squash commits?",
+        context="last three commits",
+        docs="usage: git rebase [options]",
+    )
+
+    system_prompt = messages[0]["content"]
+    user_prompt = messages[1]["content"]
+
+    assert "read-only Git expert" in system_prompt
+    assert (
+        "Answer only from the provided local Git documentation fragments"
+        in system_prompt
+    )
+    assert "Do not invent commands" in system_prompt
+    assert "last three commits" in user_prompt
+    assert "usage: git rebase" in user_prompt
+
+
+def test_generate_answer_returns_model_content(monkeypatch):
+    git_script = load_git_script()
+
+    def fake_chat(model, messages, options):
+        return {
+            "message": {
+                "content": (
+                    "🌿 [Git - rebase]\n"
+                    "Summary: Rebase replays commits.\n"
+                    "Steps:\n"
+                    "1. Run git rebase."
+                )
+            }
+        }
+
+    monkeypatch.setattr(git_script.ollama, "chat", fake_chat)
+
+    answer = git_script.generate_answer(
+        topic="rebase",
+        raw_text="How do I rebase?",
+        context=None,
+        docs="usage: git rebase [options]",
+    )
+
+    assert answer.startswith("🌿 [Git - rebase]")
+
+
+def test_generate_answer_abstains_on_empty_or_unsafe_model_output(monkeypatch):
+    git_script = load_git_script()
+
+    def fake_chat(model, messages, options):
+        return {"message": {"content": ""}}
+
+    monkeypatch.setattr(git_script.ollama, "chat", fake_chat)
+
+    assert (
+        git_script.generate_answer(
+            topic="rebase",
+            raw_text="How do I rebase?",
+            context=None,
+            docs="usage: git rebase [options]",
+        )
+        == git_script.ABSTENTION_MESSAGE
+    )
