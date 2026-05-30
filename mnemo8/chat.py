@@ -339,10 +339,15 @@ class ConversationEngine:
                         names.add(s.name)
                 return names
 
+            should_extract_git_topic = (
+                resolved_skill.get("skill") == "git"
+                and not resolved_skill.get("topic")
+                and resolved_skill.get("skill") in _leaf_names(self.state.skills)
+            )
             normalized, _ = validate_skill_payload(resolved_skill)
-            if normalized is None and resolved_skill.get("skill") in _leaf_names(
-                self.state.skills
-            ):
+            if (should_extract_git_topic or normalized is None) and resolved_skill.get(
+                "skill"
+            ) in _leaf_names(self.state.skills):
                 extracted = await self._extract_payload_for_skill(
                     user_input, resolved_skill["skill"]
                 )

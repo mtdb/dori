@@ -258,6 +258,38 @@ def test_engine_send_returns_clarify_when_required_fields_missing():
     assert response.display_text.startswith("I need ")
 
 
+def test_engine_send_extracts_git_payload_when_topic_missing():
+    state = RuntimeState(
+        cwd="/tmp",
+        skill_confidence_threshold=0.8,
+        skills=[
+            Skill(name="git", path="devtools/git.md", content="# Git Expert Skill")
+        ],
+    )
+    engine = ConversationEngine(state)
+
+    responses = [
+        _make_ollama_response('{"skill": "git", "confidence": 0.95}'),
+        _make_ollama_response(
+            '{"skill": "git", "confidence": 0.95, "topic": "rebase", "raw_text": "How do I squash commits?"}'
+        ),
+    ]
+
+    with (
+        patch("mnemo8.chat.ollama.chat", side_effect=responses),
+        patch(
+            "mnemo8.chat.run_skill", return_value="🌿 [Git - rebase]\nSummary: ok"
+        ) as mock_run,
+    ):
+        response = asyncio.run(engine.send("How do I squash commits?"))
+
+    mock_run.assert_called_once()
+    assert response.resolved_skill is not None
+    assert response.resolved_skill["skill"] == "git"
+    assert response.resolved_skill["topic"] == "rebase"
+    assert "🌿 [Git - rebase]" in response.display_text
+
+
 # ---------------------------------------------------------------------------
 # ConversationEngine — pop_last_exchange / reset
 # ---------------------------------------------------------------------------
