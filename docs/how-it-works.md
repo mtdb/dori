@@ -78,7 +78,7 @@ Skill(name="web", path="search/web.md", content="<markdown content>")
 
 A router uses its `_index.md` content when present, or a generated fallback
 description. For example, `skills/search/_index.md` creates a `search` router,
-while `web.md`, `images.md`, and `news.md` become leaf skills.
+while `web.md` and `news.md` become leaf skills.
 
 ## Turn lifecycle
 
@@ -114,8 +114,8 @@ without `confidence` is accepted as confidence `1.0`. When no skill runs,
 
 ## Routers
 
-Routers organize related skills. For example, `search` can route to `web`,
-`images`, `news`, `maps`, or `code`.
+Routers organize related skills. For example, `search` can route to `web` or
+`news`.
 
 If the model selects:
 
@@ -133,10 +133,9 @@ Before execution, `validate_skill_payload()` validates the JSON with Pydantic.
 Every payload requires `skill`, `confidence`, and `raw_text`.
 
 Skill-specific fields: `reminders` needs `message` and `when`; `calendar`
-needs `title` and `when`, with optional `duration` and `location`; `web`,
-`images`, `news`, and `code` need `query`; `news` also accepts `since`; `maps`
-needs `place` and accepts `directions_from`; `git` needs `topic` and accepts
-`context`; `docker` needs `question`.
+needs `title` and `when`, with optional `duration` and `location`; `web` and
+`news` need `query`; `news` also accepts `since`; `git` needs `topic` and
+accepts `context`; `docker` needs `question`.
 
 Extra fields are allowed so users can extend scripts. If a required field is
 missing, Dori asks for it and does not execute the script.
