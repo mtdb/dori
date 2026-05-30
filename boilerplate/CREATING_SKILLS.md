@@ -154,14 +154,14 @@ When several related skills share a common trigger (e.g. different types of sear
 
 **Intent**: Use when the user wants to search, look something up, or find information online.
 
-**Experts available**: web, images, news, maps, code
+**Experts available**: web, news
 ```
 
 The router lists the sub-skill names. The LLM picks the best match and loads the corresponding sub-skill file from the same directory.
 
 ### Sub-skill files
 
-Each sub-skill (e.g. `skills/search/news.md`) follows the same structure as a top-level skill file. The `"skill"` key in the JSON payload should match the sub-skill name (`"news"`, `"maps"`, etc.), and the corresponding script lives at `scripts/news.py`, `scripts/maps.py`, etc.
+Each sub-skill (e.g. `skills/search/news.md`) follows the same structure as a top-level skill file. The `"skill"` key in the JSON payload should match the sub-skill name (`"news"`, `"web"`, etc.), and the corresponding script lives at `scripts/news.py`, `scripts/web.py`, etc.
 
 ---
 
