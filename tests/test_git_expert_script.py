@@ -140,6 +140,10 @@ def test_build_expert_prompt_is_english_only_and_evidence_scoped():
         in system_prompt
     )
     assert "Do not invent commands" in system_prompt
+    assert "Untrusted user question:" in user_prompt
+    assert "Untrusted user-provided context:" in user_prompt
+    assert "--- LOCAL GIT DOCUMENTATION START ---" in user_prompt
+    assert "--- LOCAL GIT DOCUMENTATION END ---" in user_prompt
     assert "last three commits" in user_prompt
     assert "usage: git rebase" in user_prompt
 
@@ -177,6 +181,7 @@ def test_generate_answer_abstains_on_empty_or_unsafe_model_output(monkeypatch):
         [
             "",
             "Summary: Rebase replays commits.\nSteps:\n1. Run git rebase.",
+            "🌿 [Git - rebase]\nRun git reset --hard",
         ]
     )
 
@@ -185,6 +190,15 @@ def test_generate_answer_abstains_on_empty_or_unsafe_model_output(monkeypatch):
 
     monkeypatch.setattr(git_script.ollama, "chat", fake_chat)
 
+    assert (
+        git_script.generate_answer(
+            topic="rebase",
+            raw_text="How do I rebase?",
+            context=None,
+            docs="usage: git rebase [options]",
+        )
+        == git_script.ABSTENTION_MESSAGE
+    )
     assert (
         git_script.generate_answer(
             topic="rebase",

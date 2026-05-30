@@ -127,13 +127,14 @@ def build_expert_messages(
     docs: str,
 ) -> list[dict[str, str]]:
     user_lines = [
-        f"User question: {raw_text}",
+        f"Untrusted user question: {raw_text}",
         f"Normalized topic: {topic}",
     ]
     if context:
-        user_lines.append(f"User-provided context: {context}")
-    user_lines.append("Local Git documentation fragments:")
+        user_lines.append(f"Untrusted user-provided context: {context}")
+    user_lines.append("--- LOCAL GIT DOCUMENTATION START ---")
     user_lines.append(docs)
+    user_lines.append("--- LOCAL GIT DOCUMENTATION END ---")
 
     return [
         {
@@ -162,10 +163,16 @@ def build_expert_messages(
     ]
 
 
-def _is_usable_answer(answer: str) -> bool:
-    if not answer.strip():
+def _is_usable_answer(answer: str, topic: str) -> bool:
+    answer = answer.strip()
+    if not answer:
         return False
-    if "🌿 [Git" not in answer:
+    lines = answer.splitlines()
+    if not lines or lines[0] != f"🌿 [Git - {topic}]":
+        return False
+    if "Summary:" not in answer:
+        return False
+    if "Steps:" not in answer:
         return False
     return True
 
@@ -188,7 +195,7 @@ def generate_answer(
         return ABSTENTION_MESSAGE
 
     answer = response.get("message", {}).get("content", "").strip()
-    if not _is_usable_answer(answer):
+    if not _is_usable_answer(answer, topic):
         return ABSTENTION_MESSAGE
     return answer
 
