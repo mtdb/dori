@@ -66,7 +66,7 @@ Dori stores its runtime state in `~/.dori`:
 └── scripts/
 ```
 
-`dori init` copies the boilerplate `AGENTS.md`, `skills/`, and `scripts/` into that directory.
+`dori init` copies the boilerplate `AGENTS.md`, `skills/`, and `scripts/` into that directory. During first-time setup, it asks which reminders backend to install: D-Bus desktop notifications or the editable template script.
 The TUI stores the last 100 submitted messages in `.history` so new sessions can
 recall previous prompts with ↑/↓.
 

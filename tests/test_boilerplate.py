@@ -1,9 +1,21 @@
+import importlib.util
 import json
 import subprocess
 import sys
 from pathlib import Path
+from types import ModuleType
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+def load_reminders_dbus_module() -> ModuleType:
+    path = ROOT / "boilerplate" / "presets" / "reminders" / "dbus.py"
+    spec = importlib.util.spec_from_file_location("reminders_dbus", path)
+    assert spec is not None
+    assert spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def test_search_boilerplate_only_includes_web_and_news() -> None:
@@ -63,7 +75,11 @@ def test_git_skill_examples_include_required_payload_fields() -> None:
 def test_boilerplate_skill_examples_include_confidence_and_raw_text() -> None:
     skill_files = [
         path
-        for path in (ROOT / "boilerplate" / "skills").rglob("*.md")
+        for skill_dir in [
+            ROOT / "boilerplate" / "skills",
+            ROOT / "boilerplate" / "presets" / "reminders",
+        ]
+        for path in skill_dir.rglob("*.md")
         if path.name != "_index.md"
     ]
 
@@ -93,7 +109,6 @@ def test_non_expert_boilerplate_scripts_write_errors_to_stderr() -> None:
         "commit.py",
         "docker.py",
         "news.py",
-        "reminders.py",
         "web.py",
     ]
 
@@ -108,6 +123,163 @@ def test_non_expert_boilerplate_scripts_write_errors_to_stderr() -> None:
         assert result.returncode == 1
         assert result.stdout == ""
         assert "Error: Missing JSON payload" in result.stderr
+
+
+def test_reminders_presets_include_template_and_dbus() -> None:
+    presets_dir = ROOT / "boilerplate" / "presets" / "reminders"
+
+    assert sorted(path.name for path in presets_dir.iterdir() if path.is_file()) == [
+        "dbus.md",
+        "dbus.py",
+        "template.md",
+        "template.py",
+    ]
+    assert not (ROOT / "boilerplate" / "scripts" / "reminders.py").exists()
+    assert not (ROOT / "boilerplate" / "skills" / "reminders.md").exists()
+
+
+def test_reminders_template_preset_writes_errors_to_stderr() -> None:
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "boilerplate" / "presets" / "reminders" / "template.py"),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "Error: Missing JSON payload" in result.stderr
+
+
+def test_reminders_dbus_preset_rejects_unsupported_time() -> None:
+    payload = {
+        "skill": "reminders",
+        "confidence": 0.95,
+        "message": "drink water",
+        "when": "tomorrow at 9am",
+        "raw_text": "Remind me to drink water tomorrow at 9am",
+    }
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "boilerplate" / "presets" / "reminders" / "dbus.py"),
+            json.dumps(payload),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert result.stdout == ""
+    assert "Use a relative time like 'in 20 minutes'" in result.stderr
+
+
+def test_reminders_dbus_preset_supports_dry_run_relative_time() -> None:
+    payload = {
+        "skill": "reminders",
+        "confidence": 0.95,
+        "message": "drink water",
+        "when": "in 20 minutes",
+        "raw_text": "Remind me to drink water in 20 minutes",
+        "dry_run": True,
+    }
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "boilerplate" / "presets" / "reminders" / "dbus.py"),
+            json.dumps(payload),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert result.stderr == ""
+    assert (
+        "[D-Bus]: Scheduled reminder for 'drink water' in 20 minutes." in result.stdout
+    )
+
+
+def test_reminders_dbus_preset_schedules_detached_python_child(monkeypatch) -> None:
+    dbus = load_reminders_dbus_module()
+    payload = {
+        "skill": "reminders",
+        "confidence": 0.95,
+        "message": 'drink "water"; rm -rf /',
+        "when": "in 30 seconds",
+        "raw_text": 'Remind me to drink "water"; rm -rf / in 30 seconds',
+    }
+    which_calls = []
+    popen_calls = []
+
+    def fake_which(command: str) -> str:
+        which_calls.append(command)
+        return "/usr/bin/notify-send"
+
+    def fake_popen(args, **kwargs):
+        popen_calls.append((args, kwargs))
+        return object()
+
+    monkeypatch.setattr(dbus.shutil, "which", fake_which)
+    monkeypatch.setattr(dbus.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(
+        dbus.sys,
+        "argv",
+        [
+            str(ROOT / "boilerplate" / "presets" / "reminders" / "dbus.py"),
+            json.dumps(payload),
+        ],
+    )
+
+    dbus.main()
+
+    assert which_calls == ["notify-send"]
+    assert len(popen_calls) == 1
+    args, kwargs = popen_calls[0]
+    assert args[:2] == [sys.executable, "-c"]
+    assert args[-2:] == ["30", 'drink "water"; rm -rf /']
+    assert kwargs == {
+        "stdout": subprocess.DEVNULL,
+        "stderr": subprocess.DEVNULL,
+        "start_new_session": True,
+    }
+
+
+def test_reminders_dbus_preset_requires_notify_send(monkeypatch, capsys) -> None:
+    dbus = load_reminders_dbus_module()
+    payload = {
+        "skill": "reminders",
+        "confidence": 0.95,
+        "message": "drink water",
+        "when": "in 30 seconds",
+        "raw_text": "Remind me to drink water in 30 seconds",
+    }
+
+    monkeypatch.setattr(dbus.shutil, "which", lambda command: None)
+    monkeypatch.setattr(
+        dbus.sys,
+        "argv",
+        [
+            str(ROOT / "boilerplate" / "presets" / "reminders" / "dbus.py"),
+            json.dumps(payload),
+        ],
+    )
+
+    try:
+        dbus.main()
+    except SystemExit as error:
+        assert error.code == 1
+    else:
+        raise AssertionError("Expected SystemExit(1)")
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Error: D-Bus reminders require notify-send to be installed." in captured.err
 
 
 def test_analyze_folder_script_summarizes_project_metadata(tmp_path: Path) -> None:

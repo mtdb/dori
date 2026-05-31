@@ -13,7 +13,7 @@ Skills teach the model when to emit structured JSON. Scripts execute that JSON.
 
 ## Runtime
 
-`dori init` creates `~/.dori` and copies the bundled boilerplate:
+`dori init` creates `~/.dori`, copies the bundled boilerplate, and installs a reminders preset selected during setup:
 
 ```text
 ~/.dori/
@@ -22,6 +22,8 @@ Skills teach the model when to emit structured JSON. Scripts execute that JSON.
 |-- skills/
 `-- scripts/
 ```
+
+Reminder files are installed from `boilerplate/presets/reminders/`. The D-Bus preset uses `notify-send` for Linux desktop notifications. The template preset preserves the deterministic editable script for users who want to wire reminders to their own backend.
 
 The source template is in `boilerplate/`, with default `AGENTS.md`, grouped
 skills such as `search/` and `devtools/`, and matching Python scripts. At
