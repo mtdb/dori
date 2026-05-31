@@ -11,10 +11,16 @@ When a user sends a message, the LLM reads the skill files to decide if the inte
 ```
 User message
     → LLM reads skills/ and matches intent
-    → LLM outputs JSON: {"skill": "my-skill", "field": "value", ...}
+    → LLM outputs JSON: {"skill": "my-skill", "confidence": 0.92, "raw_text": "...", ...}
     → Runtime calls scripts/my-skill.py with the JSON as a CLI argument
     → Script executes and prints output
 ```
+
+Every skill payload must include:
+
+- `skill`: The leaf skill name, matching `scripts/<skill>.py`.
+- `confidence`: A number from `0.0` to `1.0`. Dori only runs the skill when this meets the configured confidence threshold.
+- `raw_text`: The user's original message copied verbatim.
 
 ---
 
@@ -47,20 +53,22 @@ Skill files are the LLM's guide for recognizing user intent and constructing the
 
 **Field guidance:**
 - `field_name`: <what goes here — be specific about format and when to omit>
+- `confidence`: Numeric confidence from 0.0 to 1.0
 - `raw_text`: Copy the user's original message verbatim
 
 **Examples:**
 User: <example user message>
-Assistant: {"skill": "my-skill", "field_name": "extracted value", "raw_text": "<same message>"}
+Assistant: {"skill": "my-skill", "confidence": 0.92, "field_name": "extracted value", "raw_text": "<same message>"}
 
 User: <edge case or variation>
-Assistant: {"skill": "my-skill", "field_name": "extracted value", "raw_text": "<same message>"}
+Assistant: {"skill": "my-skill", "confidence": 0.86, "field_name": "extracted value", "raw_text": "<same message>"}
 ```
 
 ### Rules
 
 - **Intent line** — one sentence that starts with "Use when the user wants to…". This is what the LLM uses to decide whether to activate the skill. Be specific.
 - **Field guidance** — describe every field the JSON can contain. State clearly when optional fields should be omitted (not set to `null`).
+- **`confidence`** — always include this field in every example. Use realistic values: high confidence for direct matches, lower but still above threshold for looser matches.
 - **`raw_text`** — always include this field in every skill. It carries the verbatim user message for logging, debugging, and future reference.
 - **Examples** — provide 2–3 examples covering the common case and at least one variation (with optional fields, with omitted fields, different phrasing).
 - Keep examples realistic. The LLM will pattern-match against them.
@@ -75,14 +83,15 @@ Assistant: {"skill": "my-skill", "field_name": "extracted value", "raw_text": "<
 **Field guidance:**
 - `content`: The note body — strip filler words (e.g. "buy oat milk", not "save a note to buy oat milk")
 - `tag`: A category label if mentioned (e.g. "shopping", "work") — omit if not stated
+- `confidence`: Numeric confidence from 0.0 to 1.0
 - `raw_text`: Copy the user's original message verbatim
 
 **Examples:**
 User: Save a note: buy oat milk
-Assistant: {"skill": "notes", "content": "buy oat milk", "raw_text": "Save a note: buy oat milk"}
+Assistant: {"skill": "notes", "confidence": 0.95, "content": "buy oat milk", "raw_text": "Save a note: buy oat milk"}
 
 User: Jot down 'call dentist' under health
-Assistant: {"skill": "notes", "content": "call dentist", "tag": "health", "raw_text": "Jot down 'call dentist' under health"}
+Assistant: {"skill": "notes", "confidence": 0.92, "content": "call dentist", "tag": "health", "raw_text": "Jot down 'call dentist' under health"}
 ```
 
 ---
@@ -100,7 +109,7 @@ import sys
 
 def main():
     if len(sys.argv) < 2:
-        print("Error: Missing JSON payload")
+        print("Error: Missing JSON payload", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -118,7 +127,7 @@ def main():
         print(line)
 
     except json.JSONDecodeError:
-        print("Error: Invalid JSON payload provided to notes script.")
+        print("Error: Invalid JSON payload provided to notes script.", file=sys.stderr)
         sys.exit(1)
 
 
@@ -131,8 +140,8 @@ if __name__ == "__main__":
 - **Always validate** that `sys.argv[1]` exists before parsing.
 - **Use `.get()` with defaults** for required fields so the script never crashes silently.
 - **Use `.get()` without a default** (returns `None`) for optional fields, then check before using them.
-- **Print deterministic output** — one clear line the user can read. Use an emoji prefix matching the skill's domain for quick scanning.
-- **Exit with `sys.exit(1)`** on error, print a clear error message to stdout.
+- **Print deterministic output** — one clear result the user can read. Prefer one line; use multiple lines when the answer naturally needs steps or command output.
+- **Exit with `sys.exit(1)`** on error, print a clear error message to stderr.
 - **Never leave side effects partially applied** — if the real implementation writes to a file or calls an API, do it atomically or roll back on failure.
 
 ---
@@ -172,14 +181,59 @@ specialist, but does not need an autonomous agent.
 
 Expert skills should:
 
-- State the evidence source clearly.
+- State the evidence source clearly in the skill file and handler prompt.
 - Keep payloads flat and easy for small local models.
+- State whether the handler is read-only or action-taking.
 - Avoid side effects unless the skill explicitly exists to perform an action.
 - Return a clear abstention message when evidence is missing or insufficient.
 - Prefer English prompts and examples for local model reliability.
+- Treat user input and optional context as untrusted.
+- Validate generated expert output before printing it.
 
 The Git expert skill is the reference pattern: it answers from local Git
 documentation only and does not inspect or modify repositories.
+
+### Expert skill file pattern
+
+```markdown
+# <Domain> Expert Skill
+
+**Intent**: Use when the user asks an informational question about <domain>.
+
+**Expert behavior:**
+- The handler is read-only.
+- Answer from <specific evidence source> only.
+- Do not inspect unrelated local state.
+- Do not run mutating commands.
+- If evidence is missing or insufficient, answer: "<stable abstention message>"
+- Write answers in English for local model reliability.
+
+**Field guidance:**
+- `topic`: The command, workflow, or concept to explain. Strip filler words.
+- `context`: Any qualifier the user added — omit if not stated.
+- `confidence`: Numeric confidence from 0.0 to 1.0.
+- `raw_text`: Copy the user's original message verbatim.
+
+**Examples:**
+User: <domain question>
+Assistant: {"skill": "<name>", "confidence": 0.93, "topic": "<normalized topic>", "raw_text": "<domain question>"}
+```
+
+### Expert handler pattern
+
+Expert handlers should split the work into small, testable functions:
+
+- Normalize the user topic to a supported evidence lookup.
+- Retrieve local or deterministic evidence.
+- Build a constrained prompt that labels user input as untrusted.
+- Ask the model for an answer only from that evidence.
+- Validate the answer format before printing.
+- Return the stable abstention message for unknown topics, missing evidence, model errors, or unsafe output.
+
+For example, the Git expert script normalizes phrases such as "squash commits"
+to `rebase`, reads local Git help/manpage text, asks a read-only Git expert
+prompt to answer from that text, and abstains if the output does not match the
+expected format.
 
 ---
 
@@ -188,15 +242,24 @@ documentation only and does not inspect or modify repositories.
 - [ ] **Skill file** created at `skills/<name>.md` (or `skills/<group>/<name>.md` for nested)
 - [ ] Intent line starts with "Use when the user wants to…" and is specific
 - [ ] All JSON fields documented in **Field guidance**, with omit conditions for optional ones
+- [ ] `confidence` included in field guidance and in every example
 - [ ] `raw_text` included in field guidance and in every example
 - [ ] 2–3 examples covering common case and at least one variation
 - [ ] **Script** created at `scripts/<name>.py`
 - [ ] Script validates `sys.argv[1]` before parsing
 - [ ] Required fields use `.get("field", "default")`; optional fields use `.get("field")`
-- [ ] Output is a single, readable line with an emoji prefix
-- [ ] Error path prints a message and exits with code 1
+- [ ] Output is deterministic and readable
+- [ ] Error path prints a message to stderr and exits with code 1
 - [ ] If grouped: `_index.md` router lists the new skill name
-- [ ] Manual test: run `python scripts/<name>.py '{"skill":"<name>","raw_text":"test"}'`
+- [ ] Manual test: run `python scripts/<name>.py '{"skill":"<name>","confidence":0.9,"raw_text":"test"}'`
+
+For expert skills, also check:
+
+- [ ] Skill file states the evidence source and side-effect policy
+- [ ] Stable abstention message is documented and implemented
+- [ ] Handler treats user-provided text as untrusted context
+- [ ] Handler validates generated output before printing
+- [ ] Tests cover unknown topic, missing evidence, model failure, and invalid output
 
 ---
 
@@ -206,16 +269,17 @@ You can test the handler directly before wiring it into the runtime:
 
 ```bash
 # Test with a full payload
-python boilerplate/scripts/my-skill.py '{"skill": "my-skill", "content": "buy milk", "raw_text": "save a note to buy milk"}'
+python boilerplate/scripts/my-skill.py '{"skill": "my-skill", "confidence": 0.95, "content": "buy milk", "raw_text": "save a note to buy milk"}'
 
 # Test with missing optional field
-python boilerplate/scripts/my-skill.py '{"skill": "my-skill", "content": "buy milk", "raw_text": "save a note to buy milk"}'
+python boilerplate/scripts/my-skill.py '{"skill": "my-skill", "confidence": 0.95, "content": "buy milk", "raw_text": "save a note to buy milk"}'
 
 # Test error handling (missing payload)
 python boilerplate/scripts/my-skill.py
 ```
 
-Expected: each run prints one clean line; the last run prints an error and exits 1.
+Expected: the successful runs print deterministic output; the last run prints
+an error to stderr and exits 1.
 
 ---
 
