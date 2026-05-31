@@ -6,6 +6,7 @@ skill execution, and the full ConversationEngine.send() turn lifecycle.
 """
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -15,6 +16,7 @@ from mnemo8.chat import (
     ConversationEngine,
     build_system_prompt,
     parse_skill,
+    run_skill,
     strip_skill_payload,
 )
 from mnemo8.models import RuntimeState, Skill
@@ -107,6 +109,15 @@ def test_build_system_prompt_no_skills_omits_skill_section():
     assert "--- Skill:" not in prompt
 
 
+def test_build_system_prompt_defines_this_folder_as_current_working_directory():
+    state = RuntimeState(cwd="/workspace/project")
+    prompt = build_system_prompt(state)
+
+    assert "Current working directory: /workspace/project" in prompt
+    assert "this folder" in prompt
+    assert "current directory" in prompt
+
+
 # ---------------------------------------------------------------------------
 # strip_skill_payload
 # ---------------------------------------------------------------------------
@@ -191,6 +202,53 @@ def test_engine_send_executes_high_confidence_skill():
     assert "✓ search" in response.display_text
     assert "22°C, sunny" in response.display_text
     assert '"skill"' not in response.display_text
+
+
+def test_engine_send_executes_skill_from_runtime_cwd():
+    state = RuntimeState(cwd="/workspace/project", skill_confidence_threshold=0.8)
+    engine = ConversationEngine(state)
+
+    raw = (
+        '{"skill": "analyze-folder", "confidence": 0.95, '
+        '"raw_text": "analize this folder"}'
+    )
+    with (
+        patch("mnemo8.chat.ollama.chat", return_value=_make_ollama_response(raw)),
+        patch("mnemo8.chat.run_skill", return_value="folder summary") as mock_run,
+    ):
+        response = asyncio.run(engine.send("analize this folder"))
+
+    mock_run.assert_called_once_with(
+        "analyze-folder",
+        {
+            "skill": "analyze-folder",
+            "confidence": 0.95,
+            "raw_text": "analize this folder",
+        },
+        cwd="/workspace/project",
+    )
+    assert response.skill_output == "folder summary"
+
+
+def test_run_skill_executes_script_from_runtime_cwd():
+    payload = {
+        "skill": "analyze-folder",
+        "confidence": 0.95,
+        "raw_text": "analize this folder",
+    }
+
+    with (
+        patch("mnemo8.chat.get_runtime_home", return_value="/home/user/.dori"),
+        patch("mnemo8.chat.os.path.isfile", return_value=True),
+        patch(
+            "mnemo8.chat.subprocess.run",
+            return_value=SimpleNamespace(stdout="folder summary\n"),
+        ) as mock_run,
+    ):
+        output = run_skill("analyze-folder", payload, cwd="/workspace/project")
+
+    assert output == "folder summary"
+    assert mock_run.call_args.kwargs["cwd"] == "/workspace/project"
 
 
 def test_engine_send_ignores_low_confidence_skill():

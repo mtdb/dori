@@ -119,6 +119,9 @@ def build_system_prompt(state: RuntimeState) -> str:
     prompt = (
         "You are Dori, a helpful personal assistant CLI running on the user's terminal.\n"
         "Dori is powered by the mnemo8 engine.\n"
+        f"Current working directory: {state.cwd}\n"
+        "When the user says this folder, this directory, the current directory, "
+        "or here, treat that as the current working directory.\n"
     )
     if state.agents_content:
         prompt += f"\nHere is information about your agent configuration:\n{state.agents_content}\n"
@@ -183,7 +186,7 @@ def _build_extraction_messages(
 # ---------------------------------------------------------------------------
 
 
-def run_skill(skill_name: str, skill_json: dict) -> str:
+def run_skill(skill_name: str, skill_json: dict, cwd: str | None = None) -> str:
     runtime_home = get_runtime_home()
     script_path = os.path.join(runtime_home, "scripts", f"{skill_name}.py")
     if not os.path.isfile(script_path):
@@ -194,6 +197,7 @@ def run_skill(skill_name: str, skill_json: dict) -> str:
             capture_output=True,
             text=True,
             check=True,
+            cwd=cwd,
         )
         return result.stdout.strip()
     except subprocess.CalledProcessError as e:
@@ -368,7 +372,7 @@ class ConversationEngine:
         if resolved_skill:
             skill_name = resolved_skill["skill"]
             skill_output = await asyncio.to_thread(
-                run_skill, skill_name, resolved_skill
+                run_skill, skill_name, resolved_skill, cwd=self.state.cwd
             )
             display_text = f"✓ {skill_name}"
             if self.state.debug:

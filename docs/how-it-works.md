@@ -50,9 +50,11 @@ inline mode use the same behavior.
 ## System prompt
 
 Each `ConversationEngine` starts with `build_system_prompt(state)`. The prompt
-contains Dori's base identity, optional `~/.dori/AGENTS.md` content, available
-top-level skills, and instructions for emitting one JSON object when a skill
-clearly matches.
+contains Dori's base identity, the current working directory, optional
+`~/.dori/AGENTS.md` content, available top-level skills, and instructions for
+emitting one JSON object when a skill clearly matches. Phrases such as "this
+folder", "this directory", "current directory", and "here" refer to that
+current working directory.
 
 A skill payload looks like this:
 
@@ -142,7 +144,7 @@ missing, Dori asks for it and does not execute the script.
 
 ## Scripts
 
-After validation, `run_skill(skill_name, skill_json)` looks for:
+After validation, `run_skill(skill_name, skill_json, cwd=state.cwd)` looks for:
 
 ```text
 ~/.dori/scripts/<skill_name>.py
@@ -154,9 +156,9 @@ It runs:
 python <script_path> '<payload-json>'
 ```
 
-The script reads `sys.argv[1]`, parses JSON, performs the action, and prints
-user-visible output to stdout. Non-zero exits show stderr as an error. Missing
-scripts are reported as missing handlers.
+The script runs from Dori's launch directory, reads `sys.argv[1]`, parses JSON,
+performs the action, and prints user-visible output to stdout. Non-zero exits
+show stderr as an error. Missing scripts are reported as missing handlers.
 
 ## Skill/script contract
 

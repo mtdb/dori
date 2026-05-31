@@ -88,6 +88,7 @@ def test_boilerplate_skill_examples_include_confidence_and_raw_text() -> None:
 
 def test_non_expert_boilerplate_scripts_write_errors_to_stderr() -> None:
     script_names = [
+        "analyze-folder.py",
         "calendar.py",
         "commit.py",
         "docker.py",
@@ -107,3 +108,46 @@ def test_non_expert_boilerplate_scripts_write_errors_to_stderr() -> None:
         assert result.returncode == 1
         assert result.stdout == ""
         assert "Error: Missing JSON payload" in result.stderr
+
+
+def test_analyze_folder_script_summarizes_project_metadata(tmp_path: Path) -> None:
+    project = tmp_path / "sample-app"
+    project.mkdir()
+    (project / "README.md").write_text(
+        "# Sample App\n\nA tiny service for testing folder analysis.\n",
+        encoding="utf-8",
+    )
+    (project / "pyproject.toml").write_text(
+        "[project]\n"
+        'name = "sample-app"\n'
+        'description = "Sample app from package metadata"\n',
+        encoding="utf-8",
+    )
+    (project / "main.py").write_text("print('hello')\n", encoding="utf-8")
+    (project / "Procfile").write_text("web: python main.py\n", encoding="utf-8")
+
+    payload = {
+        "skill": "analyze-folder",
+        "confidence": 0.95,
+        "path": str(project),
+        "raw_text": "analyze this directory",
+    }
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "boilerplate" / "scripts" / "analyze-folder.py"),
+            json.dumps(payload),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0
+    assert "[Folder Analysis]" in result.stdout
+    assert "Project: Sample App" in result.stdout
+    assert "What it does: Sample app from package metadata" in result.stdout
+    assert "pyproject.toml: Python project metadata" in result.stdout
+    assert "main.py" in result.stdout
+    assert "no extension: 1" in result.stdout
+    assert "[no extension]" not in result.stdout
