@@ -4,13 +4,13 @@ import sys
 
 def main():
     if len(sys.argv) < 2:
-        print("Error: Missing JSON payload")
+        print("Error: Missing JSON payload", file=sys.stderr)
         sys.exit(1)
 
     try:
         json.loads(sys.argv[1])
     except json.JSONDecodeError:
-        print("Error: Invalid JSON payload provided to commit script.")
+        print("Error: Invalid JSON payload provided to commit script.", file=sys.stderr)
         sys.exit(1)
 
     print(

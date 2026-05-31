@@ -77,7 +77,7 @@ def find_answer(question: str) -> str | None:
 
 def main():
     if len(sys.argv) < 2:
-        print("Error: Missing JSON payload")
+        print("Error: Missing JSON payload", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -101,7 +101,7 @@ def main():
             )
 
     except json.JSONDecodeError:
-        print("Error: Invalid JSON payload provided to docker script.")
+        print("Error: Invalid JSON payload provided to docker script.", file=sys.stderr)
         sys.exit(1)
 
 

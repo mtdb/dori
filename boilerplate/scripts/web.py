@@ -4,7 +4,7 @@ import sys
 
 def main():
     if len(sys.argv) < 2:
-        print("Error: Missing JSON payload")
+        print("Error: Missing JSON payload", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -13,7 +13,7 @@ def main():
 
         print(f"🔍 [Web Search]: Searching the web for '{query}'...")
     except json.JSONDecodeError:
-        print("Error: Invalid JSON payload provided to web script.")
+        print("Error: Invalid JSON payload provided to web script.", file=sys.stderr)
         sys.exit(1)
 
 

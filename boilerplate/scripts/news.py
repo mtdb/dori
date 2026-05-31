@@ -4,7 +4,7 @@ import sys
 
 def main():
     if len(sys.argv) < 2:
-        print("Error: Missing JSON payload")
+        print("Error: Missing JSON payload", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -15,7 +15,7 @@ def main():
         since_str = f" (since: {since})" if since else ""
         print(f"📰 [News Search]: Searching news for '{query}'{since_str}...")
     except json.JSONDecodeError:
-        print("Error: Invalid JSON payload provided to news script.")
+        print("Error: Invalid JSON payload provided to news script.", file=sys.stderr)
         sys.exit(1)
 
 

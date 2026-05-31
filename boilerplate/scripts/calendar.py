@@ -4,7 +4,7 @@ import sys
 
 def main():
     if len(sys.argv) < 2:
-        print("Error: Missing JSON payload")
+        print("Error: Missing JSON payload", file=sys.stderr)
         sys.exit(1)
 
     try:
@@ -22,7 +22,9 @@ def main():
         line += "."
         print(line)
     except json.JSONDecodeError:
-        print("Error: Invalid JSON payload provided to calendar script.")
+        print(
+            "Error: Invalid JSON payload provided to calendar script.", file=sys.stderr
+        )
         sys.exit(1)
 
 
