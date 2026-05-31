@@ -1,3 +1,6 @@
+import json
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -55,3 +58,52 @@ def test_git_skill_examples_include_required_payload_fields() -> None:
         assert '"confidence":' in line
         assert '"topic":' in line
         assert '"raw_text":' in line
+
+
+def test_boilerplate_skill_examples_include_confidence_and_raw_text() -> None:
+    skill_files = [
+        path
+        for path in (ROOT / "boilerplate" / "skills").rglob("*.md")
+        if path.name != "_index.md"
+    ]
+
+    assert skill_files
+
+    for skill_file in skill_files:
+        content = skill_file.read_text(encoding="utf-8")
+        assistant_lines = [
+            line.removeprefix("Assistant: ")
+            for line in content.splitlines()
+            if line.startswith("Assistant: ")
+        ]
+
+        assert assistant_lines, f"{skill_file} should include at least one example"
+
+        for line in assistant_lines:
+            payload = json.loads(line)
+            assert payload["skill"]
+            assert 0.0 <= payload["confidence"] <= 1.0
+            assert payload["raw_text"]
+
+
+def test_non_expert_boilerplate_scripts_write_errors_to_stderr() -> None:
+    script_names = [
+        "calendar.py",
+        "commit.py",
+        "docker.py",
+        "news.py",
+        "reminders.py",
+        "web.py",
+    ]
+
+    for script_name in script_names:
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "boilerplate" / "scripts" / script_name)],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+
+        assert result.returncode == 1
+        assert result.stdout == ""
+        assert "Error: Missing JSON payload" in result.stderr
