@@ -73,8 +73,10 @@ coverage.xml
 .worktrees/
 docs/plans/
 .poetry-cache/
+.ruff_cache/
 
 # Ignore brainstorms, superpowers, and QA docs
 docs/brainstorms/
 docs/superpowers/
 docs/qa/
+.superpowers/
