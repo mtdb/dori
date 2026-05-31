@@ -61,11 +61,14 @@ Dori stores its runtime state in `~/.dori`:
 ```text
 ~/.dori/
 ├── AGENTS.md
+├── .history
 ├── skills/
 └── scripts/
 ```
 
 `dori init` copies the boilerplate `AGENTS.md`, `skills/`, and `scripts/` into that directory.
+The TUI stores the last 100 submitted messages in `.history` so new sessions can
+recall previous prompts with ↑/↓.
 
 ## How it works
 

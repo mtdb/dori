@@ -18,6 +18,7 @@ Skills teach the model when to emit structured JSON. Scripts execute that JSON.
 ```text
 ~/.dori/
 |-- AGENTS.md
+|-- .history
 |-- skills/
 `-- scripts/
 ```
@@ -26,7 +27,8 @@ The source template is in `boilerplate/`, with default `AGENTS.md`, grouped
 skills such as `search/` and `devtools/`, and matching Python scripts. At
 runtime, Dori always loads the active configuration from `~/.dori`, so users can
 customize their local agent, skills, and scripts without editing the installed
-package.
+package. The Textual TUI also stores the last 100 submitted messages in
+`~/.dori/.history` and loads them on startup for ↑/↓ input recall.
 
 ## Startup
 

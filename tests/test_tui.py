@@ -11,8 +11,10 @@ from mnemo8.tui import (
     _build_chat_transcript,
     _build_header_status,
     _format_vram_bar,
+    append_input_history,
     compute_vram_poll_interval,
     cycle_history,
+    load_input_history,
 )
 
 # Backward-compat aliases so tests that reference the old tui names still pass
@@ -57,6 +59,104 @@ def test_cycle_history_empty_list():
     idx, val = cycle_history([], -1, -1)
     assert idx == -1
     assert val == ""
+
+
+def test_load_input_history_returns_empty_when_file_missing(tmp_path, monkeypatch):
+    monkeypatch.setattr("mnemo8.tui.get_runtime_home", lambda: tmp_path)
+
+    assert load_input_history() == []
+
+
+def test_load_input_history_decodes_json_lines(tmp_path, monkeypatch):
+    monkeypatch.setattr("mnemo8.tui.get_runtime_home", lambda: tmp_path)
+    (tmp_path / ".history").write_text(
+        '"hello world"\n"line\\nbreak"\n',
+        encoding="utf-8",
+    )
+
+    assert load_input_history() == ["hello world", "line\nbreak"]
+
+
+def test_load_input_history_ignores_invalid_lines(tmp_path, monkeypatch):
+    monkeypatch.setattr("mnemo8.tui.get_runtime_home", lambda: tmp_path)
+    (tmp_path / ".history").write_text(
+        '"first"\nnot json\n42\n""\n"last"\n',
+        encoding="utf-8",
+    )
+
+    assert load_input_history() == ["first", "last"]
+
+
+def test_append_input_history_keeps_last_100_messages(tmp_path, monkeypatch):
+    monkeypatch.setattr("mnemo8.tui.get_runtime_home", lambda: tmp_path)
+
+    for index in range(105):
+        append_input_history(f"message {index}")
+
+    assert load_input_history() == [f"message {index}" for index in range(5, 105)]
+
+
+def test_nemo_app_starts_with_persistent_input_history(tmp_path, monkeypatch):
+    monkeypatch.setattr("mnemo8.tui.get_runtime_home", lambda: tmp_path)
+    (tmp_path / ".history").write_text('"first"\n"second"\n', encoding="utf-8")
+
+    app = NemoApp(RuntimeState(cwd="/tmp"))
+
+    assert app._history == ["first", "second"]
+
+
+def test_submit_initial_prompt_persists_input_history(tmp_path, monkeypatch):
+    monkeypatch.setattr("mnemo8.tui.get_runtime_home", lambda: tmp_path)
+    state = RuntimeState(cwd="/tmp", initial_prompt="remind me at 9am")
+    app = NemoApp(state)
+    app._vram_poll_wakeup = asyncio.Event()
+
+    async def fake_send_message(value: str) -> None:
+        pass
+
+    monkeypatch.setattr(app, "_send_message", fake_send_message)
+
+    asyncio.run(app._submit_initial_prompt("remind me at 9am"))
+
+    assert load_input_history() == ["remind me at 9am"]
+
+
+def test_on_input_submitted_persists_normal_messages(tmp_path, monkeypatch):
+    monkeypatch.setattr("mnemo8.tui.get_runtime_home", lambda: tmp_path)
+    state = RuntimeState(cwd="/tmp")
+    app = NemoApp(state)
+    app._vram_poll_wakeup = asyncio.Event()
+    sent: list[str] = []
+
+    async def fake_send_message(value: str) -> None:
+        sent.append(value)
+
+    class DummyInput:
+        value = ""
+
+    monkeypatch.setattr(app, "query_one", lambda *args, **kwargs: DummyInput())
+    monkeypatch.setattr(app, "_send_message", fake_send_message)
+
+    asyncio.run(app.on_input_submitted(SimpleNamespace(value="hello world")))
+
+    assert sent == ["hello world"]
+    assert load_input_history() == ["hello world"]
+
+
+def test_clear_command_keeps_persistent_input_history(tmp_path, monkeypatch):
+    monkeypatch.setattr("mnemo8.tui.get_runtime_home", lambda: tmp_path)
+    append_input_history("first")
+    app = NemoApp(RuntimeState(cwd="/tmp"))
+
+    class DummyMessageList:
+        def __init__(self) -> None:
+            self.children: list[object] = []
+
+    app.query_one = lambda *args, **kwargs: DummyMessageList()  # type: ignore[method-assign]
+
+    asyncio.run(app._handle_clear())
+
+    assert load_input_history() == ["first"]
 
 
 def test_format_vram_bar_none_when_free_none():

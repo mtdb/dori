@@ -8,6 +8,7 @@ conversation engine.
 """
 
 import asyncio
+import json
 import math
 import os
 import subprocess
@@ -30,7 +31,7 @@ from mnemo8.chat import (
     parse_skill,
     run_skill,
 )
-from mnemo8.loader import load_available_vram
+from mnemo8.loader import get_runtime_home, load_available_vram
 from mnemo8.models import RuntimeState
 
 # ---------------------------------------------------------------------------
@@ -48,6 +49,8 @@ COLOR_USER = "#6fc3df"
 COLOR_NEMO = "#f38518"
 COLOR_THINKING = "#555555"
 AGENT_DISPLAY_NAME = "Dori"
+INPUT_HISTORY_FILENAME = ".history"
+INPUT_HISTORY_LIMIT = 100
 VRAM_POLL_BURST_WINDOW_SECONDS = 13.0
 VRAM_POLL_TAU_SECONDS = 60.0
 VRAM_POLL_BUCKETS = (1, 5, 10, 15, 20, 30)
@@ -122,6 +125,45 @@ def cycle_history(history: list[str], idx: int, direction: int) -> tuple[int, st
             new_idx = -1
     value = "" if new_idx == -1 else history[new_idx]
     return new_idx, value
+
+
+def load_input_history(limit: int = INPUT_HISTORY_LIMIT) -> list[str]:
+    history_path = get_runtime_home() / INPUT_HISTORY_FILENAME
+    if not history_path.is_file():
+        return []
+
+    messages: list[str] = []
+    try:
+        lines = history_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeDecodeError):
+        return []
+
+    for line in lines:
+        try:
+            message = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(message, str) and message:
+            messages.append(message)
+    return messages[-limit:]
+
+
+def append_input_history(
+    message: str,
+    limit: int = INPUT_HISTORY_LIMIT,
+) -> list[str]:
+    history_path = get_runtime_home() / INPUT_HISTORY_FILENAME
+    history = [*load_input_history(limit), message][-limit:]
+    serialized = "\n".join(json.dumps(entry) for entry in history)
+    if serialized:
+        serialized += "\n"
+
+    try:
+        history_path.parent.mkdir(parents=True, exist_ok=True)
+        history_path.write_text(serialized, encoding="utf-8")
+    except OSError:
+        pass
+    return history
 
 
 def _write_clipboard(text: str) -> None:
@@ -222,7 +264,7 @@ class NemoApp(App):
     def __init__(self, state: RuntimeState) -> None:
         self._state = state
         self._engine = ConversationEngine(state)
-        self._history: list[str] = []
+        self._history: list[str] = load_input_history()
         self._history_idx: int = -1
         self._last_user_input: str | None = None
         self._last_interaction_widgets: list[Static] = []
@@ -282,7 +324,7 @@ class NemoApp(App):
     async def _submit_initial_prompt(self, prompt: str) -> None:
         self._last_user_input = prompt
         self._mark_vram_activity()
-        self._history.append(prompt)
+        self._history = append_input_history(prompt)
         self._history_idx = -1
         await self._send_message(prompt)
 
@@ -403,7 +445,7 @@ class NemoApp(App):
 
         self._last_user_input = user_input
         self._mark_vram_activity()
-        self._history.append(user_input)
+        self._history = append_input_history(user_input)
         self._history_idx = -1
         await self._send_message(user_input)
 
