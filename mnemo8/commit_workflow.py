@@ -454,15 +454,24 @@ def suggest_commit_message(group: CommitGroup) -> str | None:
     except Exception:
         return None
 
-    if not isinstance(response, dict):
-        return None
-    message = response.get("message")
-    if not isinstance(message, dict):
-        return None
-    content = message.get("content", "")
+    content = _ollama_response_content(response)
     if not isinstance(content, str):
         return None
     return validate_llm_commit_message(content, group)
+
+
+def _ollama_response_content(response) -> str | None:
+    if isinstance(response, dict):
+        message = response.get("message")
+    else:
+        message = getattr(response, "message", None)
+
+    if isinstance(message, dict):
+        content = message.get("content")
+    else:
+        content = getattr(message, "content", None)
+
+    return content if isinstance(content, str) else None
 
 
 def _prompt_data_string(value: str) -> str:

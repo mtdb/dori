@@ -400,6 +400,29 @@ def test_suggest_commit_message_returns_valid_ollama_response(monkeypatch):
     assert calls[0][2] == {"temperature": 0}
 
 
+def test_suggest_commit_message_returns_valid_ollama_typed_response(monkeypatch):
+    class FakeOllama:
+        @staticmethod
+        def chat(model, messages, options):
+            return SimpleNamespace(
+                message=SimpleNamespace(
+                    content="fix(commit): 🐛 generate specific commit messages"
+                )
+            )
+
+    monkeypatch.setattr("mnemo8.commit_workflow._load_ollama", lambda: FakeOllama)
+    group = CommitGroup(
+        files=[ChangedFile("mnemo8/commit_workflow.py", "modified", diff="+changed")],
+        commit_type="fix",
+        scope="commit",
+        emoji="🐛",
+    )
+
+    message = suggest_commit_message(group)
+
+    assert message == "fix(commit): 🐛 generate specific commit messages"
+
+
 def test_suggest_commit_message_returns_none_when_ollama_unavailable(monkeypatch):
     monkeypatch.setattr("mnemo8.commit_workflow._load_ollama", lambda: None)
     group = CommitGroup(
