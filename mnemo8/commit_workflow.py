@@ -392,6 +392,8 @@ def validate_llm_commit_message(message: str, group: CommitGroup) -> str | None:
     body_text = body_suffix.strip()
     if separator and not body_text:
         return None
+    if re.search(r"^\s*(explanation|reasoning|why):", body_text, re.IGNORECASE):
+        return None
 
     subject = subject_line.strip()
     if not subject:
@@ -415,7 +417,9 @@ def validate_llm_commit_message(message: str, group: CommitGroup) -> str | None:
     description = match.group(3).strip()
     if not description:
         return None
-    if re.search(r"\bupdate (folder|files|project)\b", description, re.IGNORECASE):
+    if re.search(
+        r"\bupdate (?:the )?(folder|files|project)\b", description, re.IGNORECASE
+    ):
         return None
 
     return subject if not body_text else subject + body_suffix

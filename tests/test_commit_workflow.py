@@ -322,6 +322,26 @@ def test_validate_llm_commit_message_rejects_markdown_and_explanations():
         )
         is None
     )
+    assert (
+        validate_llm_commit_message(
+            "fix(commit): 🐛 improve commits\n\nExplanation: clearer summary",
+            group,
+        )
+        is None
+    )
+
+
+def test_validate_llm_commit_message_rejects_generic_update_with_article():
+    group = CommitGroup(
+        files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
+        commit_type="fix",
+        scope="commit",
+        emoji="🐛",
+    )
+
+    assert (
+        validate_llm_commit_message("fix(commit): 🐛 update the project", group) is None
+    )
 
 
 def test_validate_llm_commit_message_rejects_type_or_scope_mismatch():
