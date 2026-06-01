@@ -287,6 +287,21 @@ def test_validate_llm_commit_message_accepts_matching_conventional_message():
     assert message == "fix(commit): 🐛 generate specific commit messages"
 
 
+def test_validate_llm_commit_message_preserves_valid_body_formatting():
+    group = CommitGroup(
+        files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
+        commit_type="fix",
+        scope="commit",
+        emoji="🐛",
+    )
+
+    message = validate_llm_commit_message(
+        "fix(commit): 🐛 improve commits\n\nPreserve body spacing", group
+    )
+
+    assert message == "fix(commit): 🐛 improve commits\n\nPreserve body spacing"
+
+
 def test_validate_llm_commit_message_rejects_markdown_and_explanations():
     group = CommitGroup(
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
@@ -321,6 +336,17 @@ def test_validate_llm_commit_message_rejects_type_or_scope_mismatch():
         validate_llm_commit_message("feat(commit): ✨ improve commits", group) is None
     )
     assert validate_llm_commit_message("fix(chat): 🐛 improve commits", group) is None
+
+
+def test_validate_llm_commit_message_rejects_empty_scope_parentheses():
+    group = CommitGroup(
+        files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
+        commit_type="fix",
+        scope="",
+        emoji="🐛",
+    )
+
+    assert validate_llm_commit_message("fix(): 🐛 improve commits", group) is None
 
 
 def test_commit_group_stages_selected_files_and_commits(monkeypatch):

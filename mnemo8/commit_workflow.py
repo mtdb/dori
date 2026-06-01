@@ -387,14 +387,19 @@ def validate_llm_commit_message(message: str, group: CommitGroup) -> str | None:
     if "```" in cleaned:
         return None
 
-    lines = cleaned.splitlines()
-    subject = lines[0].strip()
+    subject_line, separator, body = cleaned.partition("\n")
+    body_suffix = separator + body
+    body_text = body_suffix.strip()
+    if separator and not body_text:
+        return None
+
+    subject = subject_line.strip()
     if not subject:
         return None
     if subject.lower().startswith(("here is", "commit message", "message:")):
         return None
 
-    match = re.match(r"^(\w+)(?:\(([^)]*)\))?[!]?:\s+(.+)$", subject)
+    match = re.match(r"^(\w+)(?:\(([^)]+)\))?[!]?:\s+(.+)$", subject)
     if match is None:
         return None
 
@@ -413,8 +418,7 @@ def validate_llm_commit_message(message: str, group: CommitGroup) -> str | None:
     if re.search(r"\bupdate (folder|files|project)\b", description, re.IGNORECASE):
         return None
 
-    body = "\n".join(line.rstrip() for line in lines[1:]).strip()
-    return subject if not body else subject + "\n" + body
+    return subject if not body_text else subject + body_suffix
 
 
 def _prompt_data_string(value: str) -> str:
