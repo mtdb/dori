@@ -380,6 +380,43 @@ def build_commit_message_prompt(group: CommitGroup) -> list[dict[str, str]]:
     ]
 
 
+def validate_llm_commit_message(message: str, group: CommitGroup) -> str | None:
+    cleaned = message.strip().strip('"').strip("'").strip()
+    if not cleaned:
+        return None
+    if "```" in cleaned:
+        return None
+
+    lines = cleaned.splitlines()
+    subject = lines[0].strip()
+    if not subject:
+        return None
+    if subject.lower().startswith(("here is", "commit message", "message:")):
+        return None
+
+    match = re.match(r"^(\w+)(?:\(([^)]*)\))?[!]?:\s+(.+)$", subject)
+    if match is None:
+        return None
+
+    expected_type = group.commit_type
+    expected_scope = group.scope
+    if expected_type and match.group(1) != expected_type:
+        return None
+    if expected_scope and (match.group(2) or "") != expected_scope:
+        return None
+    if expected_scope == "" and match.group(2):
+        return None
+
+    description = match.group(3).strip()
+    if not description:
+        return None
+    if re.search(r"\bupdate (folder|files|project)\b", description, re.IGNORECASE):
+        return None
+
+    body = "\n".join(line.rstrip() for line in lines[1:]).strip()
+    return subject if not body else subject + "\n" + body
+
+
 def _prompt_data_string(value: str) -> str:
     return json.dumps(value.replace("```", "` ` `"), ensure_ascii=False)
 

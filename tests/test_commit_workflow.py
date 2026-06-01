@@ -12,6 +12,7 @@ from mnemo8.commit_workflow import (
     detect_type,
     group_files,
     parse_status_lines,
+    validate_llm_commit_message,
 )
 
 
@@ -269,6 +270,57 @@ def test_build_commit_message_prompt_says_no_scope_omits_parentheses():
 
     assert "Detected scope: none (omit scope parentheses)" in messages[1]["content"]
     assert "omit scope parentheses" in messages[0]["content"].lower()
+
+
+def test_validate_llm_commit_message_accepts_matching_conventional_message():
+    group = CommitGroup(
+        files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
+        commit_type="fix",
+        scope="commit",
+        emoji="🐛",
+    )
+
+    message = validate_llm_commit_message(
+        "fix(commit): 🐛 generate specific commit messages", group
+    )
+
+    assert message == "fix(commit): 🐛 generate specific commit messages"
+
+
+def test_validate_llm_commit_message_rejects_markdown_and_explanations():
+    group = CommitGroup(
+        files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
+        commit_type="fix",
+        scope="commit",
+        emoji="🐛",
+    )
+
+    assert (
+        validate_llm_commit_message(
+            "```text\nfix(commit): 🐛 improve commits\n```", group
+        )
+        is None
+    )
+    assert (
+        validate_llm_commit_message(
+            "Here is the message:\nfix(commit): 🐛 improve commits", group
+        )
+        is None
+    )
+
+
+def test_validate_llm_commit_message_rejects_type_or_scope_mismatch():
+    group = CommitGroup(
+        files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
+        commit_type="fix",
+        scope="commit",
+        emoji="🐛",
+    )
+
+    assert (
+        validate_llm_commit_message("feat(commit): ✨ improve commits", group) is None
+    )
+    assert validate_llm_commit_message("fix(chat): 🐛 improve commits", group) is None
 
 
 def test_commit_group_stages_selected_files_and_commits(monkeypatch):
