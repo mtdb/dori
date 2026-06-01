@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 from mnemo8.commit_workflow import (
+    MAX_PROMPT_DIFF_LINES,
     ChangedFile,
     CommitGroup,
     amend_qualifies,
@@ -117,10 +118,56 @@ def test_build_commit_message_prompt_includes_group_context():
     user_prompt = messages[1]["content"]
     assert "Detected type: fix" in user_prompt
     assert "Detected scope: commit" in user_prompt
+    assert "Expected emoji: 🐛" in user_prompt
     assert "modified mnemo8/commit_workflow.py" in user_prompt
     assert "modified tests/test_commit_workflow.py" in user_prompt
     assert "suggest_commit_message" in user_prompt
     assert "test_suggest_commit_message" in user_prompt
+
+
+def test_build_commit_message_prompt_includes_renamed_source_path():
+    group = CommitGroup(
+        files=[
+            ChangedFile(
+                "mnemo8/new_commit_workflow.py",
+                "renamed",
+                diff="+def moved():\n+    return True",
+                old_path="mnemo8/commit_workflow.py",
+            ),
+        ],
+        commit_type="refactor",
+        scope="commit",
+        emoji="♻️",
+    )
+
+    user_prompt = build_commit_message_prompt(group)[1]["content"]
+
+    assert (
+        "renamed mnemo8/new_commit_workflow.py (renamed from mnemo8/commit_workflow.py)"
+    ) in user_prompt
+
+
+def test_build_commit_message_prompt_trims_diff_content_to_line_limit():
+    diff_lines = [
+        f"+line {line_number}" for line_number in range(MAX_PROMPT_DIFF_LINES + 1)
+    ]
+    group = CommitGroup(
+        files=[
+            ChangedFile(
+                "mnemo8/commit_workflow.py",
+                "modified",
+                diff="\n".join(diff_lines),
+            ),
+        ],
+        commit_type="fix",
+        scope="commit",
+        emoji="🐛",
+    )
+
+    user_prompt = build_commit_message_prompt(group)[1]["content"]
+
+    assert f"+line {MAX_PROMPT_DIFF_LINES - 1}" in user_prompt
+    assert f"+line {MAX_PROMPT_DIFF_LINES}" not in user_prompt
 
 
 def test_build_commit_message_prompt_avoids_triple_backtick_fences_from_diffs():
