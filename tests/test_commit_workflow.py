@@ -4,6 +4,7 @@ from mnemo8.commit_workflow import (
     MAX_PROMPT_DIFF_LINES,
     ChangedFile,
     CommitGroup,
+    _build_review_message,
     amend_qualifies,
     build_commit_message,
     build_commit_message_prompt,
@@ -449,6 +450,39 @@ def test_suggest_commit_message_returns_none_for_malformed_ollama_response(
     assert suggest_commit_message(group) is None
     assert suggest_commit_message(group) is None
     assert suggest_commit_message(group) is None
+
+
+def test_build_review_message_uses_ollama_suggestion(monkeypatch):
+    monkeypatch.setattr(
+        "mnemo8.commit_workflow.suggest_commit_message",
+        lambda group: "fix(commit): 🐛 generate specific commit messages",
+    )
+    group = CommitGroup(
+        files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
+        commit_type="fix",
+        scope="commit",
+        emoji="🐛",
+    )
+
+    message = _build_review_message(group)
+
+    assert message == "fix(commit): 🐛 generate specific commit messages"
+
+
+def test_build_review_message_falls_back_when_ollama_returns_none(monkeypatch):
+    monkeypatch.setattr(
+        "mnemo8.commit_workflow.suggest_commit_message", lambda group: None
+    )
+    group = CommitGroup(
+        files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
+        commit_type="fix",
+        scope="commit",
+        emoji="🐛",
+    )
+
+    message = _build_review_message(group)
+
+    assert message == "fix(commit): 🐛 update commit"
 
 
 def test_commit_group_stages_selected_files_and_commits(monkeypatch):

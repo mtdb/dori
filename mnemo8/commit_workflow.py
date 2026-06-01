@@ -654,6 +654,20 @@ def run_interactive(
     return 0
 
 
+def _build_review_message(group: CommitGroup, console: Console | None = None) -> str:
+    fallback = build_commit_message(group)
+    suggestion = suggest_commit_message(group)
+    if suggestion:
+        return suggestion
+
+    if console is not None:
+        console.print(
+            "[yellow]Ollama commit suggestion unavailable; using fallback.[/yellow]",
+            highlight=False,
+        )
+    return fallback
+
+
 def _review_group(group: CommitGroup, index: int, total: int, console: Console) -> bool:
     _show_group(group, index, total, console)
     if group.commit_type is None:
@@ -662,7 +676,7 @@ def _review_group(group: CommitGroup, index: int, total: int, console: Console) 
         )
         group.commit_type = _ask_commit_type(console)
         group.emoji = EMOJI_FOR_TYPE.get(group.commit_type, "🔧")
-    group.message = build_commit_message(group)
+    group.message = _build_review_message(group, console)
 
     while True:
         console.print("\nSuggested commit message:", style="bold")
@@ -681,10 +695,10 @@ def _review_group(group: CommitGroup, index: int, total: int, console: Console) 
         if answer == "type":
             group.commit_type = _ask_commit_type(console)
             group.emoji = EMOJI_FOR_TYPE.get(group.commit_type, "🔧")
-            group.message = build_commit_message(group)
+            group.message = _build_review_message(group, console)
         if answer == "scope":
             group.scope = Prompt.ask("Scope", default="", console=console).strip()
-            group.message = build_commit_message(group)
+            group.message = _build_review_message(group, console)
         if answer == "message":
             group.message = _read_multiline_message(console)
 
