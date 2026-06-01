@@ -428,6 +428,29 @@ def test_suggest_commit_message_returns_none_on_ollama_error(monkeypatch):
     assert suggest_commit_message(group) is None
 
 
+def test_suggest_commit_message_returns_none_for_malformed_ollama_response(
+    monkeypatch,
+):
+    responses = [None, {"message": None}, {"message": {"content": 123}}]
+
+    class FakeOllama:
+        @staticmethod
+        def chat(model, messages, options):
+            return responses.pop(0)
+
+    monkeypatch.setattr("mnemo8.commit_workflow._load_ollama", lambda: FakeOllama)
+    group = CommitGroup(
+        files=[ChangedFile("mnemo8/commit_workflow.py", "modified", diff="+changed")],
+        commit_type="fix",
+        scope="commit",
+        emoji="🐛",
+    )
+
+    assert suggest_commit_message(group) is None
+    assert suggest_commit_message(group) is None
+    assert suggest_commit_message(group) is None
+
+
 def test_commit_group_stages_selected_files_and_commits(monkeypatch):
     calls: list[list[str]] = []
 

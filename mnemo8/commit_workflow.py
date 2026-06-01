@@ -454,7 +454,12 @@ def suggest_commit_message(group: CommitGroup) -> str | None:
     except Exception:
         return None
 
-    content = response.get("message", {}).get("content", "")
+    if not isinstance(response, dict):
+        return None
+    message = response.get("message")
+    if not isinstance(message, dict):
+        return None
+    content = message.get("content", "")
     if not isinstance(content, str):
         return None
     return validate_llm_commit_message(content, group)
