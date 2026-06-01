@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib
 import json
 import re
 import subprocess
@@ -28,6 +29,7 @@ STATUS_SYMBOL = {"new": "+", "modified": "~", "deleted": "-", "renamed": "→"}
 COMMIT_MESSAGE_MODEL = "llama3.1:8b"
 COMMIT_MESSAGE_OPTIONS = {"temperature": 0}
 MAX_PROMPT_DIFF_LINES = 80
+ollama = None
 
 
 @dataclass
@@ -423,6 +425,39 @@ def validate_llm_commit_message(message: str, group: CommitGroup) -> str | None:
         return None
 
     return subject if not body_text else subject + body_suffix
+
+
+def _load_ollama():
+    global ollama
+    if ollama is not None:
+        return ollama
+
+    try:
+        ollama = importlib.import_module("ollama")
+    except Exception:
+        return None
+
+    return ollama
+
+
+def suggest_commit_message(group: CommitGroup) -> str | None:
+    ollama_client = _load_ollama()
+    if ollama_client is None:
+        return None
+
+    try:
+        response = ollama_client.chat(
+            model=COMMIT_MESSAGE_MODEL,
+            messages=build_commit_message_prompt(group),
+            options=COMMIT_MESSAGE_OPTIONS,
+        )
+    except Exception:
+        return None
+
+    content = response.get("message", {}).get("content", "")
+    if not isinstance(content, str):
+        return None
+    return validate_llm_commit_message(content, group)
 
 
 def _prompt_data_string(value: str) -> str:

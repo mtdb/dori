@@ -12,6 +12,7 @@ from mnemo8.commit_workflow import (
     detect_type,
     group_files,
     parse_status_lines,
+    suggest_commit_message,
     validate_llm_commit_message,
 )
 
@@ -367,6 +368,64 @@ def test_validate_llm_commit_message_rejects_empty_scope_parentheses():
     )
 
     assert validate_llm_commit_message("fix(): 🐛 improve commits", group) is None
+
+
+def test_suggest_commit_message_returns_valid_ollama_response(monkeypatch):
+    calls = []
+
+    class FakeOllama:
+        @staticmethod
+        def chat(model, messages, options):
+            calls.append((model, messages, options))
+            return {
+                "message": {
+                    "content": "fix(commit): 🐛 generate specific commit messages"
+                }
+            }
+
+    monkeypatch.setattr("mnemo8.commit_workflow._load_ollama", lambda: FakeOllama)
+    group = CommitGroup(
+        files=[ChangedFile("mnemo8/commit_workflow.py", "modified", diff="+changed")],
+        commit_type="fix",
+        scope="commit",
+        emoji="🐛",
+    )
+
+    message = suggest_commit_message(group)
+
+    assert message == "fix(commit): 🐛 generate specific commit messages"
+    assert calls
+    assert calls[0][0] == "llama3.1:8b"
+    assert calls[0][2] == {"temperature": 0}
+
+
+def test_suggest_commit_message_returns_none_when_ollama_unavailable(monkeypatch):
+    monkeypatch.setattr("mnemo8.commit_workflow._load_ollama", lambda: None)
+    group = CommitGroup(
+        files=[ChangedFile("mnemo8/commit_workflow.py", "modified", diff="+changed")],
+        commit_type="fix",
+        scope="commit",
+        emoji="🐛",
+    )
+
+    assert suggest_commit_message(group) is None
+
+
+def test_suggest_commit_message_returns_none_on_ollama_error(monkeypatch):
+    class FakeOllama:
+        @staticmethod
+        def chat(model, messages, options):
+            raise RuntimeError("ollama unavailable")
+
+    monkeypatch.setattr("mnemo8.commit_workflow._load_ollama", lambda: FakeOllama)
+    group = CommitGroup(
+        files=[ChangedFile("mnemo8/commit_workflow.py", "modified", diff="+changed")],
+        commit_type="fix",
+        scope="commit",
+        emoji="🐛",
+    )
+
+    assert suggest_commit_message(group) is None
 
 
 def test_commit_group_stages_selected_files_and_commits(monkeypatch):
