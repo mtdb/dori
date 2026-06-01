@@ -5,6 +5,7 @@ from mnemo8.commit_workflow import (
     CommitGroup,
     amend_qualifies,
     build_commit_message,
+    build_commit_message_prompt,
     commit_group,
     detect_scope,
     detect_type,
@@ -88,6 +89,38 @@ def test_build_commit_message_uses_conventional_commit_with_body_for_multiple_fi
         "🔧 update mnemo8/chat.py\n"
         "✅ update tests/test_chat.py"
     )
+
+
+def test_build_commit_message_prompt_includes_group_context():
+    group = CommitGroup(
+        files=[
+            ChangedFile(
+                "mnemo8/commit_workflow.py",
+                "modified",
+                diff="+def suggest_commit_message(group):\n+    return generated",
+            ),
+            ChangedFile(
+                "tests/test_commit_workflow.py",
+                "modified",
+                diff="+def test_suggest_commit_message():\n+    assert message",
+            ),
+        ],
+        commit_type="fix",
+        scope="commit",
+        emoji="🐛",
+    )
+
+    messages = build_commit_message_prompt(group)
+
+    assert messages[0]["role"] == "system"
+    assert "output only the commit message" in messages[0]["content"].lower()
+    user_prompt = messages[1]["content"]
+    assert "Detected type: fix" in user_prompt
+    assert "Detected scope: commit" in user_prompt
+    assert "modified mnemo8/commit_workflow.py" in user_prompt
+    assert "modified tests/test_commit_workflow.py" in user_prompt
+    assert "suggest_commit_message" in user_prompt
+    assert "test_suggest_commit_message" in user_prompt
 
 
 def test_commit_group_stages_selected_files_and_commits(monkeypatch):

@@ -24,6 +24,9 @@ EMOJI_FOR_TYPE = {
 }
 ALL_TYPES = list(EMOJI_FOR_TYPE)
 STATUS_SYMBOL = {"new": "+", "modified": "~", "deleted": "-", "renamed": "→"}
+COMMIT_MESSAGE_MODEL = "llama3.1:8b"
+COMMIT_MESSAGE_OPTIONS = {"temperature": 0}
+MAX_PROMPT_DIFF_LINES = 80
 
 
 @dataclass
@@ -313,6 +316,50 @@ def build_commit_message(group: CommitGroup) -> str:
         for changed_file in group.files[:6]
     ]
     return subject + "\n\n" + "\n".join(body_lines)
+
+
+def build_commit_message_prompt(group: CommitGroup) -> list[dict[str, str]]:
+    commit_type = group.commit_type or "chore"
+    emoji = group.emoji or EMOJI_FOR_TYPE.get(commit_type, "🔧")
+    scope = group.scope or ""
+    file_sections: list[str] = []
+
+    for changed_file in group.files:
+        path_line = f"{changed_file.status} {changed_file.path}"
+        if changed_file.old_path:
+            path_line = f"{path_line} (renamed from {changed_file.old_path})"
+
+        diff_lines = changed_file.diff.splitlines()[:MAX_PROMPT_DIFF_LINES]
+        diff_text = "\n".join(diff_lines).strip() or "(no diff available)"
+        file_sections.append(f"{path_line}\n```diff\n{diff_text}\n```")
+
+    user_prompt = "\n\n".join(
+        [
+            f"Detected type: {commit_type}",
+            f"Detected scope: {scope or '(none)'}",
+            f"Expected emoji: {emoji}",
+            "Changed files:",
+            "\n\n".join(file_sections),
+        ]
+    )
+
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You write high-quality git commit messages.\n"
+                "Output only the commit message, with no markdown fences, "
+                "no explanations, and no surrounding quotes.\n"
+                "Use conventional commits format.\n"
+                "Use the detected type and scope exactly when provided.\n"
+                "Include the expected emoji after the colon.\n"
+                "Use imperative mood and describe the behavior change.\n"
+                "Avoid generic subjects like 'update folder', 'update files', "
+                "or 'update project'."
+            ),
+        },
+        {"role": "user", "content": user_prompt},
+    ]
 
 
 def _subject_verb(commit_type: str) -> str:
