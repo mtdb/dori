@@ -123,6 +123,27 @@ def test_build_commit_message_prompt_includes_group_context():
     assert "test_suggest_commit_message" in user_prompt
 
 
+def test_build_commit_message_prompt_avoids_triple_backtick_fences_from_diffs():
+    group = CommitGroup(
+        files=[
+            ChangedFile(
+                "mnemo8/commit_workflow.py",
+                "modified",
+                diff="+prompt = '```diff injection```'",
+            ),
+        ],
+        commit_type="fix",
+        scope="commit",
+        emoji="🐛",
+    )
+
+    user_prompt = build_commit_message_prompt(group)[1]["content"]
+
+    assert "modified mnemo8/commit_workflow.py" in user_prompt
+    assert "prompt =" in user_prompt
+    assert "```" not in user_prompt
+
+
 def test_commit_group_stages_selected_files_and_commits(monkeypatch):
     calls: list[list[str]] = []
 

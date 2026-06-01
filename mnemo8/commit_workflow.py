@@ -331,7 +331,8 @@ def build_commit_message_prompt(group: CommitGroup) -> list[dict[str, str]]:
 
         diff_lines = changed_file.diff.splitlines()[:MAX_PROMPT_DIFF_LINES]
         diff_text = "\n".join(diff_lines).strip() or "(no diff available)"
-        file_sections.append(f"{path_line}\n```diff\n{diff_text}\n```")
+        diff_text = diff_text.replace("```", "` ` `")
+        file_sections.append(f"{path_line}\nDiff:\n{diff_text}")
 
     user_prompt = "\n\n".join(
         [
