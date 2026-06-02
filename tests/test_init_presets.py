@@ -24,6 +24,9 @@ def test_init_workspace_installs_template_reminders_preset(tmp_path, monkeypatch
     init_workspace(str(ROOT), reminders_backend="template")
 
     runtime_home = tmp_path / ".dori"
+    assert (runtime_home / "assets" / "dori.png").read_bytes() == (
+        ROOT / "boilerplate" / "assets" / "dori.png"
+    ).read_bytes()
     assert (runtime_home / "scripts" / "reminders.py").read_text(encoding="utf-8") == (
         ROOT / "boilerplate" / "presets" / "reminders" / "template.py"
     ).read_text(encoding="utf-8")
@@ -38,6 +41,9 @@ def test_init_workspace_installs_dbus_reminders_preset(tmp_path, monkeypatch):
     init_workspace(str(ROOT), reminders_backend="dbus")
 
     runtime_home = tmp_path / ".dori"
+    assert (runtime_home / "assets" / "dori.png").read_bytes() == (
+        ROOT / "boilerplate" / "assets" / "dori.png"
+    ).read_bytes()
     assert (runtime_home / "scripts" / "reminders.py").read_text(encoding="utf-8") == (
         ROOT / "boilerplate" / "presets" / "reminders" / "dbus.py"
     ).read_text(encoding="utf-8")

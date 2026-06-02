@@ -133,6 +133,30 @@ def init_workspace(cwd: str, reminders_backend: str | None = None):
         else:
             console.print(f"[red]Boilerplate AGENTS.md not found at {agents_src}[/red]")
 
+    # Copy assets/
+    assets_src = boilerplate_dir / "assets"
+    assets_dest = runtime_home / "assets"
+    if assets_src.is_dir():
+        for src in assets_src.rglob("*"):
+            if not src.is_file():
+                continue
+            relative = src.relative_to(assets_src)
+            dest = assets_dest / relative
+            dest.parent.mkdir(parents=True, exist_ok=True)
+            if dest.exists():
+                console.print(
+                    f"[yellow]Skipped[/yellow] {dest.relative_to(runtime_home)} (already exists)"
+                )
+            else:
+                shutil.copy2(src, dest)
+                console.print(
+                    f"[green]Copied[/green] {src.relative_to(repo_root)} -> {dest.relative_to(runtime_home)}"
+                )
+    else:
+        console.print(
+            f"[yellow]No boilerplate assets/ directory found at {assets_src}[/yellow]"
+        )
+
     # Copy scripts/
     scripts_src = boilerplate_dir / "scripts"
     scripts_dest = runtime_home / "scripts"

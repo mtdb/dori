@@ -205,6 +205,18 @@ def test_reminders_dbus_preset_supports_dry_run_relative_time() -> None:
     )
 
 
+def test_reminders_dbus_preset_builds_notify_send_command_with_project_icon() -> None:
+    dbus = load_reminders_dbus_module()
+    command = dbus._notify_send_command("drink water")
+
+    assert command[:3] == [
+        "notify-send",
+        "-i",
+        str(ROOT / "boilerplate" / "assets" / "dori.png"),
+    ]
+    assert command[3:] == ["Dori reminder", "drink water"]
+
+
 def test_reminders_dbus_preset_schedules_detached_python_child(monkeypatch) -> None:
     dbus = load_reminders_dbus_module()
     payload = {
@@ -242,7 +254,11 @@ def test_reminders_dbus_preset_schedules_detached_python_child(monkeypatch) -> N
     assert len(popen_calls) == 1
     args, kwargs = popen_calls[0]
     assert args[:2] == [sys.executable, "-c"]
-    assert args[-2:] == ["30", 'drink "water"; rm -rf /']
+    assert args[-3:] == [
+        "30",
+        'drink "water"; rm -rf /',
+        str(ROOT / "boilerplate" / "assets" / "dori.png"),
+    ]
     assert kwargs == {
         "stdout": subprocess.DEVNULL,
         "stderr": subprocess.DEVNULL,
