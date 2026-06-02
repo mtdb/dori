@@ -1,6 +1,6 @@
 # Dori
 
-Dori is the public product: a local-first terminal assistant that loads its persona from `AGENTS.md`, discovers declarative `skills/`, and routes requests into deterministic scripts.
+Dori is the public product: a local-first terminal assistant that loads its persona from `AGENTS.md`, discovers declarative `skills/`, and routes requests into deterministic scripts or direct `dori <skill-name>` commands.
 
 ## Interface
 
@@ -74,7 +74,7 @@ recall previous prompts with ↑/↓.
 
 1. Dori builds a system prompt from `~/.dori/AGENTS.md` and available skills.
 2. The `mnemo8` engine asks the local model to either answer normally or emit a skill JSON payload.
-3. If a skill is selected, Dori runs the matching script from `~/.dori/scripts/`.
+3. If a skill is selected, or the user invokes `dori <skill-name>`, Dori runs the matching script from `~/.dori/scripts/`.
 4. The TUI continues to present the assistant as `Dori`.
 
 ## Development
