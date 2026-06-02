@@ -1,6 +1,8 @@
 import argparse
 import asyncio
+import json
 import os
+import subprocess
 import sys
 
 from rich.console import Console
@@ -8,7 +10,6 @@ from rich.markup import escape
 
 from mnemo8.chat import ConversationEngine
 from mnemo8.commands import init_workspace
-from mnemo8.commit_workflow import run_interactive as run_commit_interactive
 from mnemo8.loader import (
     get_runtime_home,
     load_agents,
@@ -51,13 +52,12 @@ def run():
         help="Send a single prompt and print the response inline (no TUI).",
         default=None,
     )
-    subparsers = parser.add_subparsers(dest="command")
-
-    # Command: init
-    subparsers.add_parser("init", help="Initialize Dori with default agents and skills")
-    subparsers.add_parser(
-        "commit", help="Create conventional commits from local changes"
+    parser.add_argument(
+        "command",
+        nargs="?",
+        help="Run 'init' or execute an installed skill script by name.",
     )
+    parser.add_argument("skill_args", nargs=argparse.REMAINDER)
 
     args = parser.parse_args()
     cwd = os.getcwd()
@@ -69,11 +69,11 @@ def run():
         init_workspace(cwd)
         return
 
-    if args.command == "commit":
+    if args.command:
         if args.prompt:
-            print("-p/--prompt is not valid with 'commit' command.", file=sys.stderr)
+            print("-p/--prompt is not valid with skill commands.", file=sys.stderr)
             sys.exit(2)
-        sys.exit(run_commit_interactive(cwd))
+        sys.exit(run_cli_skill(args.command, args.skill_args, cwd))
 
     runtime_home = get_runtime_home()
     if not runtime_home.is_dir():
@@ -122,6 +122,33 @@ def _run_inline(state: RuntimeState, prompt: str) -> None:
         console.print(f"[red]Error:[/red] {escape(str(e))}", highlight=False)
         sys.exit(1)
     console.print(response.display_text, highlight=False)
+
+
+def run_cli_skill(skill_name: str, skill_args: list[str], cwd: str) -> int:
+    if skill_name.startswith("_"):
+        print(f"Script for skill '{skill_name}' not found", file=sys.stderr)
+        return 1
+
+    runtime_home = get_runtime_home()
+    script_path = runtime_home / "scripts" / f"{skill_name}.py"
+    if not script_path.is_file():
+        print(f"Script for skill '{skill_name}' not found", file=sys.stderr)
+        return 1
+
+    raw_text = " ".join(["dori", skill_name, *skill_args]).strip()
+    payload = {
+        "skill": skill_name,
+        "confidence": 1.0,
+        "raw_text": raw_text,
+        "cli": True,
+        "args": skill_args,
+    }
+    result = subprocess.run(
+        [sys.executable, str(script_path), json.dumps(payload)],
+        check=False,
+        cwd=cwd,
+    )
+    return result.returncode
 
 
 if __name__ == "__main__":
