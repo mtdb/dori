@@ -8,6 +8,11 @@ This guide covers how to add a skill to the boilerplate — from the skill defin
 
 When a user sends a message, the LLM reads the skill files to decide if the intent matches. If it does, it outputs a **JSON payload** instead of a text response. The runtime then dispatches that payload to the corresponding Python script, which executes the action deterministically.
 
+Some skills can also be executed directly as `dori <skill-name>`. In that case,
+the runtime still calls the same script, but it passes a CLI-oriented payload
+with `cli: true`. That keeps the core generic and lets only command-shaped
+skills expose a direct command.
+
 ```
 User message
     → LLM reads skills/ and matches intent
@@ -99,6 +104,8 @@ Assistant: {"skill": "notes", "confidence": 0.92, "content": "call dentist", "ta
 ## Step 2 — Write the Handler Script (`scripts/my-skill.py`)
 
 Handler scripts receive the JSON payload as a CLI argument, extract fields, and execute the action.
+If the skill is also meant to be callable as `dori <skill-name>`, the script
+should accept the CLI payload form too.
 
 ### Structure
 
@@ -143,6 +150,7 @@ if __name__ == "__main__":
 - **Print deterministic output** — one clear result the user can read. Prefer one line; use multiple lines when the answer naturally needs steps or command output.
 - **Exit with `sys.exit(1)`** on error, print a clear error message to stderr.
 - **Never leave side effects partially applied** — if the real implementation writes to a file or calls an API, do it atomically or roll back on failure.
+- **If the skill is command-shaped**, accept the `{"cli": true, ...}` payload and decide whether to run the full interactive workflow or a lightweight command response.
 
 ---
 
@@ -177,7 +185,9 @@ Each sub-skill (e.g. `skills/search/news.md`) follows the same structure as a to
 ## Expert Skills
 
 Use an expert skill when a domain benefits from a handoff to a constrained
-specialist, but does not need an autonomous agent.
+specialist, but does not need an autonomous agent. If the same capability should
+also be callable as `dori <skill-name>`, keep that behavior in the same script
+instead of adding special core logic.
 
 Expert skills should:
 
@@ -252,6 +262,7 @@ expected format.
 - [ ] Error path prints a message to stderr and exits with code 1
 - [ ] If grouped: `_index.md` router lists the new skill name
 - [ ] Manual test: run `python scripts/<name>.py '{"skill":"<name>","confidence":0.9,"raw_text":"test"}'`
+- [ ] If command-shaped, manual test `dori <name>` from a repo with the skill installed
 
 For expert skills, also check:
 

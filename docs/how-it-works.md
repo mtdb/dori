@@ -7,7 +7,7 @@ Dori separates model routing from deterministic execution:
 
 - `AGENTS.md` defines persona and high-level behavior.
 - `skills/` contains Markdown definitions for intents, fields, and examples.
-- `scripts/` contains Python handlers that receive JSON and execute actions.
+- `scripts/` contains Python handlers that receive JSON from chat or run directly through `dori <skill-name>`.
 
 Skills teach the model when to emit structured JSON. Scripts execute that JSON.
 
@@ -41,11 +41,16 @@ The CLI entrypoint is registered in `pyproject.toml`:
 dori = "mnemo8.main:run"
 ```
 
-`mnemo8.main.run()` parses `dori`, `dori --prompt "..."`, or `dori init`.
-`dori init` calls `init_workspace()` and copies missing boilerplate files into
-`~/.dori`. Normal runs require `~/.dori`, load `AGENTS.md`, load the skill tree,
-read VRAM information through `nvidia-smi` when available, build a
-`RuntimeState`, and then run either one inline turn or the Textual TUI.
+`mnemo8.main.run()` parses `dori`, `dori --prompt "..."`, `dori init`, or
+`dori <skill-name>`. `dori init` calls `init_workspace()` and copies missing
+boilerplate files into `~/.dori`. Normal runs require `~/.dori`, load
+`AGENTS.md`, load the skill tree, read VRAM information through `nvidia-smi`
+when available, build a `RuntimeState`, and then run either one inline turn or
+the Textual TUI.
+
+Direct skill commands use the installed script for that skill name and pass a
+small CLI payload with `cli: true`. That keeps the core generic while still
+letting action-oriented skills such as `commit` expose a native command.
 
 The TUI handles display, input, history, clipboard, and VRAM refreshes. The
 conversation logic lives in `mnemo8.chat.ConversationEngine`, so TUI mode and
@@ -164,6 +169,10 @@ The script runs from Dori's launch directory, reads `sys.argv[1]`, parses JSON,
 performs the action, and prints user-visible output to stdout. Non-zero exits
 show stderr as an error. Missing scripts are reported as missing handlers.
 
+For direct CLI execution, `dori <skill-name>` uses the same script path but
+passes a payload with `cli: true` and `raw_text` set to the full command line.
+That is useful for skills that are naturally command-shaped, such as `commit`.
+
 ## Skill/script contract
 
 The link between a skill and a script is the leaf skill name:
@@ -208,7 +217,9 @@ minimum accepted skill confidence and is clamped to `0.0` to `1.0`.
 To add a leaf skill, create `~/.dori/skills/<name>.md`, define intent, field
 guidance, and JSON examples, then create `~/.dori/scripts/<name>.py`. The script
 should read `sys.argv[1]`, parse JSON, execute deterministically, and print a
-clear result. Test the script directly, then test through `dori --prompt`.
+clear result. If you want the skill to be runnable as `dori <name>`, have the
+script accept the CLI payload form as well. Test the script directly, then test
+through `dori --prompt` and, if applicable, `dori <name>`.
 
 To add a category, create `~/.dori/skills/<category>/_index.md`, add child
 skills in that directory, and create one flat script per child skill in
