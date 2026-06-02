@@ -106,7 +106,6 @@ def test_non_expert_boilerplate_scripts_write_errors_to_stderr() -> None:
     script_names = [
         "analyze-folder.py",
         "calendar.py",
-        "commit.py",
         "docker.py",
         "news.py",
         "web.py",

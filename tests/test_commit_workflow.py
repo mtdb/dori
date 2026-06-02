@@ -1,21 +1,33 @@
+import importlib.util
+import sys
+from io import StringIO
+from pathlib import Path
 from types import SimpleNamespace
 
-from mnemo8.commit_workflow import (
-    MAX_PROMPT_DIFF_LINES,
-    ChangedFile,
-    CommitGroup,
-    _build_review_message,
-    amend_qualifies,
-    build_commit_message,
-    build_commit_message_prompt,
-    commit_group,
-    detect_scope,
-    detect_type,
-    group_files,
-    parse_status_lines,
-    suggest_commit_message,
-    validate_llm_commit_message,
-)
+ROOT = Path(__file__).resolve().parents[1]
+COMMIT_WORKFLOW = ROOT / "boilerplate" / "scripts" / "_commit_workflow.py"
+
+spec = importlib.util.spec_from_file_location("dori_commit_workflow", COMMIT_WORKFLOW)
+assert spec is not None
+assert spec.loader is not None
+commit_workflow = importlib.util.module_from_spec(spec)
+sys.modules[spec.name] = commit_workflow
+spec.loader.exec_module(commit_workflow)
+
+MAX_PROMPT_DIFF_LINES = commit_workflow.MAX_PROMPT_DIFF_LINES
+ChangedFile = commit_workflow.ChangedFile
+CommitGroup = commit_workflow.CommitGroup
+_build_review_message = commit_workflow._build_review_message
+amend_qualifies = commit_workflow.amend_qualifies
+build_commit_message = commit_workflow.build_commit_message
+build_commit_message_prompt = commit_workflow.build_commit_message_prompt
+commit_group = commit_workflow.commit_group
+detect_scope = commit_workflow.detect_scope
+detect_type = commit_workflow.detect_type
+group_files = commit_workflow.group_files
+parse_status_lines = commit_workflow.parse_status_lines
+suggest_commit_message = commit_workflow.suggest_commit_message
+validate_llm_commit_message = commit_workflow.validate_llm_commit_message
 
 
 def test_parse_status_lines_handles_common_statuses():
@@ -384,7 +396,7 @@ def test_suggest_commit_message_returns_valid_ollama_response(monkeypatch):
                 }
             }
 
-    monkeypatch.setattr("mnemo8.commit_workflow._load_ollama", lambda: FakeOllama)
+    monkeypatch.setattr(commit_workflow, "_load_ollama", lambda: FakeOllama)
     group = CommitGroup(
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified", diff="+changed")],
         commit_type="fix",
@@ -410,7 +422,7 @@ def test_suggest_commit_message_returns_valid_ollama_typed_response(monkeypatch)
                 )
             )
 
-    monkeypatch.setattr("mnemo8.commit_workflow._load_ollama", lambda: FakeOllama)
+    monkeypatch.setattr(commit_workflow, "_load_ollama", lambda: FakeOllama)
     group = CommitGroup(
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified", diff="+changed")],
         commit_type="fix",
@@ -424,7 +436,7 @@ def test_suggest_commit_message_returns_valid_ollama_typed_response(monkeypatch)
 
 
 def test_suggest_commit_message_returns_none_when_ollama_unavailable(monkeypatch):
-    monkeypatch.setattr("mnemo8.commit_workflow._load_ollama", lambda: None)
+    monkeypatch.setattr(commit_workflow, "_load_ollama", lambda: None)
     group = CommitGroup(
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified", diff="+changed")],
         commit_type="fix",
@@ -435,13 +447,35 @@ def test_suggest_commit_message_returns_none_when_ollama_unavailable(monkeypatch
     assert suggest_commit_message(group) is None
 
 
+def test_load_ollama_excludes_script_dir_from_sys_path(monkeypatch):
+    script_dir = str(COMMIT_WORKFLOW.parent)
+    original_path = [script_dir, "", "/tmp/example"]
+    seen_paths = []
+
+    def fake_import_module(name):
+        seen_paths.append(list(commit_workflow.sys.path))
+        return SimpleNamespace(chat=lambda **kwargs: None)
+
+    monkeypatch.setattr(commit_workflow, "ollama", None)
+    monkeypatch.setattr(commit_workflow.sys, "path", list(original_path))
+    monkeypatch.setattr(commit_workflow.importlib, "import_module", fake_import_module)
+
+    result = commit_workflow._load_ollama()
+
+    assert result is not None
+    assert len(seen_paths) == 1
+    assert script_dir not in seen_paths[0]
+    assert "/tmp/example" in seen_paths[0]
+    assert commit_workflow.sys.path == original_path
+
+
 def test_suggest_commit_message_returns_none_on_ollama_error(monkeypatch):
     class FakeOllama:
         @staticmethod
         def chat(model, messages, options):
             raise RuntimeError("ollama unavailable")
 
-    monkeypatch.setattr("mnemo8.commit_workflow._load_ollama", lambda: FakeOllama)
+    monkeypatch.setattr(commit_workflow, "_load_ollama", lambda: FakeOllama)
     group = CommitGroup(
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified", diff="+changed")],
         commit_type="fix",
@@ -462,7 +496,7 @@ def test_suggest_commit_message_returns_none_for_malformed_ollama_response(
         def chat(model, messages, options):
             return responses.pop(0)
 
-    monkeypatch.setattr("mnemo8.commit_workflow._load_ollama", lambda: FakeOllama)
+    monkeypatch.setattr(commit_workflow, "_load_ollama", lambda: FakeOllama)
     group = CommitGroup(
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified", diff="+changed")],
         commit_type="fix",
@@ -477,7 +511,8 @@ def test_suggest_commit_message_returns_none_for_malformed_ollama_response(
 
 def test_build_review_message_uses_ollama_suggestion(monkeypatch):
     monkeypatch.setattr(
-        "mnemo8.commit_workflow.suggest_commit_message",
+        commit_workflow,
+        "suggest_commit_message",
         lambda group: "fix(commit): 🐛 generate specific commit messages",
     )
     group = CommitGroup(
@@ -494,7 +529,9 @@ def test_build_review_message_uses_ollama_suggestion(monkeypatch):
 
 def test_build_review_message_falls_back_when_ollama_returns_none(monkeypatch):
     monkeypatch.setattr(
-        "mnemo8.commit_workflow.suggest_commit_message", lambda group: None
+        commit_workflow,
+        "suggest_commit_message",
+        lambda group: None,
     )
     group = CommitGroup(
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
@@ -508,6 +545,36 @@ def test_build_review_message_falls_back_when_ollama_returns_none(monkeypatch):
     assert message == "fix(commit): 🐛 update commit"
 
 
+def test_build_review_message_reports_ollama_connection_failure(monkeypatch):
+    monkeypatch.setattr(
+        commit_workflow,
+        "suggest_commit_message",
+        lambda group: None,
+    )
+    monkeypatch.setattr(
+        commit_workflow,
+        "_last_ollama_error",
+        "Failed to connect to Ollama.",
+        raising=False,
+    )
+    group = CommitGroup(
+        files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
+        commit_type="fix",
+        scope="commit",
+        emoji="🐛",
+    )
+    output = StringIO()
+    console = commit_workflow.Console(
+        file=output, force_terminal=False, color_system=None
+    )
+
+    message = _build_review_message(group, console)
+
+    assert message == "fix(commit): 🐛 update commit"
+    rendered = " ".join(output.getvalue().split())
+    assert "Failed to connect to Ollama." in rendered
+
+
 def test_commit_group_stages_selected_files_and_commits(monkeypatch):
     calls: list[list[str]] = []
 
@@ -519,7 +586,7 @@ def test_commit_group_stages_selected_files_and_commits(monkeypatch):
             return SimpleNamespace(returncode=0, stdout="abc123\n", stderr="")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("mnemo8.commit_workflow.subprocess.run", fake_run)
+    monkeypatch.setattr(commit_workflow.subprocess, "run", fake_run)
     group = CommitGroup(
         files=[ChangedFile("mnemo8/chat.py", "modified")],
         message="fix(chat): 🐛 update chat",
@@ -549,7 +616,7 @@ def test_commit_group_retries_hook_failure_with_same_group_only(monkeypatch):
             return SimpleNamespace(returncode=0, stdout="abc123\n", stderr="")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("mnemo8.commit_workflow.subprocess.run", fake_run)
+    monkeypatch.setattr(commit_workflow.subprocess, "run", fake_run)
     group = CommitGroup(
         files=[ChangedFile("mnemo8/chat.py", "modified")],
         message="fix(chat): 🐛 update chat",
@@ -577,7 +644,7 @@ def test_commit_group_returns_git_add_error_without_traceback(monkeypatch):
             returncode=128, stdout="", stderr="fatal: pathspec failed"
         )
 
-    monkeypatch.setattr("mnemo8.commit_workflow.subprocess.run", fake_run)
+    monkeypatch.setattr(commit_workflow.subprocess, "run", fake_run)
     group = CommitGroup(
         files=[ChangedFile("missing.py", "deleted")],
         message="refactor: ♻️ remove missing",
@@ -601,7 +668,7 @@ def test_commit_group_does_not_restage_already_staged_deletion(monkeypatch):
             return SimpleNamespace(returncode=0, stdout="abc123\n", stderr="")
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("mnemo8.commit_workflow.subprocess.run", fake_run)
+    monkeypatch.setattr(commit_workflow.subprocess, "run", fake_run)
     group = CommitGroup(
         files=[
             ChangedFile(
