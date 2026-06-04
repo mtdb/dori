@@ -316,6 +316,70 @@ def test_engine_send_returns_clarify_when_required_fields_missing():
     assert response.display_text.startswith("I need ")
 
 
+def test_engine_translate_to_english_uses_isolated_model_call():
+    state = RuntimeState(cwd="/tmp")
+    engine = ConversationEngine(state)
+
+    with patch(
+        "mnemo8.chat.ollama.chat",
+        return_value=_make_ollama_response("Summarize this folder."),
+    ) as mock_chat:
+        result = asyncio.run(engine.translate_to_english("Resume esta carpeta."))
+
+    assert result == "Summarize this folder."
+    assert engine.messages == [
+        {"role": "system", "content": build_system_prompt(state)}
+    ]
+    messages = mock_chat.call_args.kwargs["messages"]
+    assert len(messages) == 2
+    assert messages[0]["role"] == "system"
+    assert "Translate the user's text to natural English" in messages[0]["content"]
+    assert "Resume esta carpeta." in messages[1]["content"]
+
+
+def test_engine_translate_to_english_wraps_question_as_text_to_translate():
+    state = RuntimeState(cwd="/tmp")
+    engine = ConversationEngine(state)
+
+    with patch(
+        "mnemo8.chat.ollama.chat",
+        return_value=_make_ollama_response("Where is Spain?"),
+    ) as mock_chat:
+        result = asyncio.run(engine.translate_to_english("donde esta españa?"))
+
+    assert result == "Where is Spain?"
+    user_message = mock_chat.call_args.kwargs["messages"][1]
+    assert user_message["role"] == "user"
+    assert user_message["content"] != "donde esta españa?"
+    assert "TEXT TO TRANSLATE" in user_message["content"]
+    assert "donde esta españa?" in user_message["content"]
+
+
+def test_engine_translate_to_english_strips_model_content():
+    state = RuntimeState(cwd="/tmp")
+    engine = ConversationEngine(state)
+
+    with patch(
+        "mnemo8.chat.ollama.chat",
+        return_value=_make_ollama_response("\n  Explain the latest logs.  \n"),
+    ):
+        result = asyncio.run(engine.translate_to_english("Explica los últimos logs."))
+
+    assert result == "Explain the latest logs."
+
+
+def test_engine_translate_to_english_failure_does_not_mutate_history():
+    state = RuntimeState(cwd="/tmp")
+    engine = ConversationEngine(state)
+    original_messages = list(engine.messages)
+
+    with patch("mnemo8.chat.ollama.chat", side_effect=RuntimeError("conn failed")):
+        with pytest.raises(RuntimeError):
+            asyncio.run(engine.translate_to_english("Hola"))
+
+    assert engine.messages == original_messages
+
+
 def test_engine_send_extracts_git_payload_when_topic_missing():
     state = RuntimeState(
         cwd="/tmp",

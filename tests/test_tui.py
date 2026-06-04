@@ -239,6 +239,109 @@ def test_on_input_submitted_marks_vram_activity_before_sending(monkeypatch):
     assert app._vram_poll_wakeup.is_set()
 
 
+def test_translate_input_blank_is_noop(monkeypatch):
+    state = RuntimeState(cwd="/tmp")
+    app = NemoApp(state)
+
+    class DummyInput:
+        value = "   "
+        cursor_position = 0
+
+    class FakeEngine:
+        called = False
+
+        async def translate_to_english(self, text: str) -> str:
+            self.called = True
+            return text
+
+    fake_engine = FakeEngine()
+    app._engine = fake_engine
+    monkeypatch.setattr(app, "query_one", lambda *args, **kwargs: DummyInput())
+
+    asyncio.run(app._handle_translate_input())
+
+    assert fake_engine.called is False
+
+
+def test_translate_input_replaces_value_and_cursor(monkeypatch):
+    state = RuntimeState(cwd="/tmp")
+    app = NemoApp(state)
+    app._vram_poll_wakeup = asyncio.Event()
+    dummy_input = SimpleNamespace(value="Resume esta carpeta.", cursor_position=0)
+    prompt_updates: list[object] = []
+
+    class DummyPromptLabel:
+        def update(self, value) -> None:
+            prompt_updates.append(value)
+
+    class FakeEngine:
+        async def translate_to_english(self, text: str) -> str:
+            assert text == "Resume esta carpeta."
+            return "Summarize this folder."
+
+    app._engine = FakeEngine()
+
+    def fake_query_one(selector, *args, **kwargs):
+        if selector == "#prompt-label":
+            return DummyPromptLabel()
+        return dummy_input
+
+    monkeypatch.setattr(app, "query_one", fake_query_one)
+
+    asyncio.run(app._handle_translate_input())
+
+    assert dummy_input.value == "Summarize this folder."
+    assert dummy_input.cursor_position == len("Summarize this folder.")
+    assert app._last_user_activity_monotonic is not None
+    assert app._vram_poll_wakeup.is_set()
+    assert prompt_updates[0] == "⠋"
+    assert prompt_updates[-1] == "❯"
+
+
+def test_translate_input_failure_keeps_original_and_notifies(monkeypatch):
+    state = RuntimeState(cwd="/tmp")
+    app = NemoApp(state)
+    dummy_input = SimpleNamespace(value="Hola mundo", cursor_position=3)
+    notifications: list[tuple[str, str, str | None]] = []
+    prompt_updates: list[object] = []
+
+    class DummyPromptLabel:
+        def update(self, value) -> None:
+            prompt_updates.append(value)
+
+    class FakeEngine:
+        async def translate_to_english(self, text: str) -> str:
+            raise RuntimeError("conn failed")
+
+    def fake_notify(
+        message: str,
+        *,
+        title: str = "",
+        severity: str = "information",
+        timeout: float | None = None,
+        markup: bool = True,
+    ) -> None:
+        notifications.append((message, title, severity))
+
+    app._engine = FakeEngine()
+
+    def fake_query_one(selector, *args, **kwargs):
+        if selector == "#prompt-label":
+            return DummyPromptLabel()
+        return dummy_input
+
+    monkeypatch.setattr(app, "query_one", fake_query_one)
+    monkeypatch.setattr(app, "notify", fake_notify)
+
+    asyncio.run(app._handle_translate_input())
+
+    assert dummy_input.value == "Hola mundo"
+    assert dummy_input.cursor_position == 3
+    assert prompt_updates[0] == "⠋"
+    assert prompt_updates[-1] == "❯"
+    assert notifications == [("Translation failed: conn failed", "Dori", "error")]
+
+
 def test_build_chat_transcript_uses_visible_messages_only():
     transcript = _build_chat_transcript(
         [

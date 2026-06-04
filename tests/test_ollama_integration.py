@@ -99,3 +99,14 @@ def test_llama31_routes_devtools_git_skill_through_router(dori_runtime):
     assert "Delete a tag" in response.skill_output
     assert "git tag -d <tag-name>" in response.skill_output
     assert "✓ git" in response.display_text
+
+
+@pytest.mark.integration
+def test_llama31_translates_spanish_question_without_answering(dori_runtime):
+    engine = ConversationEngine(dori_runtime)
+
+    translated = asyncio.run(engine.translate_to_english("donde esta españa?"))
+
+    assert translated.lower().strip(" ?") == "where is spain"
+    assert "europe" not in translated.lower()
+    assert "iberian" not in translated.lower()
