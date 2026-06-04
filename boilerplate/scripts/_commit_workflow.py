@@ -745,7 +745,7 @@ def _review_group(group: CommitGroup, index: int, total: int, console: Console) 
 
         answer = Prompt.ask(
             "Commit this group?",
-            choices=["y", "n", "type", "scope", "message", "skip"],
+            choices=["y", "n", "type", "scope", "message", "retry", "r", "skip"],
             default="y",
             console=console,
         )
@@ -761,6 +761,8 @@ def _review_group(group: CommitGroup, index: int, total: int, console: Console) 
             group.message = _build_review_message(group, console)
         if answer == "message":
             group.message = _read_multiline_message(console)
+        if answer in {"retry", "r"}:
+            group.message = _build_review_message(group, console)
 
 
 def _show_group(group: CommitGroup, index: int, total: int, console: Console) -> None:
