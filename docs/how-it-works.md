@@ -5,7 +5,7 @@ internal engine lives in the `mnemo8` package.
 
 Dori separates model routing from deterministic execution:
 
-- `AGENTS.md` defines persona and high-level behavior.
+- `DORI.md` defines persona and high-level behavior.
 - `skills/` contains Markdown definitions for intents, fields, and examples.
 - `scripts/` contains Python handlers that receive JSON from chat or run directly through `dori <skill-name>`.
 
@@ -17,7 +17,8 @@ Skills teach the model when to emit structured JSON. Scripts execute that JSON.
 
 ```text
 ~/.dori/
-|-- AGENTS.md
+|-- DORI.md
+|-- .manifest.json
 |-- .history
 |-- skills/
 `-- scripts/
@@ -25,12 +26,16 @@ Skills teach the model when to emit structured JSON. Scripts execute that JSON.
 
 Reminder files are installed from `boilerplate/presets/reminders/`. The D-Bus preset uses `notify-send` for Linux desktop notifications. The template preset preserves the deterministic editable script for users who want to wire reminders to their own backend.
 
-The source template is in `boilerplate/`, with default `AGENTS.md`, grouped
+The source template is in `boilerplate/`, with default `DORI.md`, grouped
 skills such as `search/` and `devtools/`, and matching Python scripts. At
 runtime, Dori always loads the active configuration from `~/.dori`, so users can
 customize their local agent, skills, and scripts without editing the installed
 package. The Textual TUI also stores the last 100 submitted messages in
 `~/.dori/.history` and loads them on startup for ↑/↓ input recall.
+`~/.dori/.manifest.json` stores md5 hashes for files managed by the bundled
+boilerplate. `dori update` uses those hashes to overwrite only files that still
+match their last installed content, while preserving locally edited files and
+reporting each skipped path.
 
 ## Startup
 
@@ -41,12 +46,13 @@ The CLI entrypoint is registered in `pyproject.toml`:
 dori = "mnemo8.main:run"
 ```
 
-`mnemo8.main.run()` parses `dori`, `dori --prompt "..."`, `dori init`, or
-`dori <skill-name>`. `dori init` calls `init_workspace()` and copies missing
-boilerplate files into `~/.dori`. Normal runs require `~/.dori`, load
-`AGENTS.md`, load the skill tree, read VRAM information through `nvidia-smi`
-when available, build a `RuntimeState`, and then run either one inline turn or
-the Textual TUI.
+`mnemo8.main.run()` parses `dori`, `dori --prompt "..."`, `dori init`,
+`dori update`, or `dori <skill-name>`. `dori init` calls `init_workspace()` and
+copies missing boilerplate files into `~/.dori`. `dori update` calls
+`update_workspace()` and refreshes only unmodified managed files according to
+`.manifest.json`. Normal runs require `~/.dori`, load `DORI.md`, load the skill
+tree, read VRAM information through `nvidia-smi` when available, build a
+`RuntimeState`, and then run either one inline turn or the Textual TUI.
 
 Direct skill commands use the installed script for that skill name and pass a
 small CLI payload with `cli: true`. That keeps the core generic while still
@@ -60,7 +66,7 @@ inline mode use the same behavior.
 
 Each `ConversationEngine` starts with `build_system_prompt(state)`. The prompt
 contains Dori's base identity, the current working directory, optional
-`~/.dori/AGENTS.md` content, available top-level skills, and instructions for
+`~/.dori/DORI.md` content, available top-level skills, and instructions for
 emitting one JSON object when a skill clearly matches. Phrases such as "this
 folder", "this directory", "current directory", and "here" refer to that
 current working directory.

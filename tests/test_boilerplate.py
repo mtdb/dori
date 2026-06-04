@@ -133,6 +133,8 @@ def test_reminders_presets_include_template_and_dbus() -> None:
         "template.md",
         "template.py",
     ]
+    assert (ROOT / "boilerplate" / "DORI.md").exists()
+    assert not (ROOT / "boilerplate" / "AGENTS.md").exists()
     assert not (ROOT / "boilerplate" / "scripts" / "reminders.py").exists()
     assert not (ROOT / "boilerplate" / "skills" / "reminders.md").exists()
 

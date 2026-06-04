@@ -124,7 +124,10 @@ def build_system_prompt(state: RuntimeState) -> str:
         "or here, treat that as the current working directory.\n"
     )
     if state.agents_content:
-        prompt += f"\nHere is information about your agent configuration:\n{state.agents_content}\n"
+        prompt += (
+            "\nHere is information from your Dori persona file:\n"
+            f"{state.agents_content}\n"
+        )
     if state.skills:
         prompt += "\nHere are your available skills that you should be aware of:\n"
         prompt += (

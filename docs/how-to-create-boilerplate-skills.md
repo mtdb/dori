@@ -33,7 +33,7 @@ Every skill payload must include:
 
 ```
 boilerplate/
-├── AGENTS.md               # Persona and routing instructions for the LLM
+├── DORI.md                 # Persona and routing instructions for the LLM
 ├── skills/
 │   ├── my-skill.md         # Skill definition (intent, fields, examples)
 │   └── search/
@@ -154,9 +154,9 @@ if __name__ == "__main__":
 
 ---
 
-## Step 3 — Register the Skill in `AGENTS.md` (if needed)
+## Step 3 — Register the Skill in `DORI.md` (if needed)
 
-`AGENTS.md` is the system prompt. If your skill changes routing behavior or introduces a new category, add a brief note there. For simple leaf skills that don't affect routing, no change is needed.
+`DORI.md` is the system prompt. If your skill changes routing behavior or introduces a new category, add a brief note there. For simple leaf skills that don't affect routing, no change is needed.
 
 ---
 

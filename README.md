@@ -1,6 +1,6 @@
 # Dori
 
-Dori is the public product: a local-first terminal assistant that loads its persona from `AGENTS.md`, discovers declarative `skills/`, and routes requests into deterministic scripts or direct `dori <skill-name>` commands.
+Dori is the public product: a local-first terminal assistant that loads its persona from `DORI.md`, discovers declarative `skills/`, and routes requests into deterministic scripts or direct `dori <skill-name>` commands.
 
 ## Interface
 
@@ -60,19 +60,24 @@ Dori stores its runtime state in `~/.dori`:
 
 ```text
 ~/.dori/
-├── AGENTS.md
+├── DORI.md
+├── .manifest.json
 ├── .history
 ├── skills/
 └── scripts/
 ```
 
-`dori init` copies the boilerplate `AGENTS.md`, `skills/`, and `scripts/` into that directory. During first-time setup, it asks which reminders backend to install: D-Bus desktop notifications or the editable template script.
+`dori init` copies the boilerplate `DORI.md`, `skills/`, and `scripts/` into that directory. During first-time setup, it asks which reminders backend to install: D-Bus desktop notifications or the editable template script.
+It also records md5 hashes for managed files in `.manifest.json`. `dori update`
+uses that manifest to refresh files that still match their last installed hash,
+while skipping files with local user modifications and printing an informative
+message for each skipped file.
 The TUI stores the last 100 submitted messages in `.history` so new sessions can
 recall previous prompts with ↑/↓.
 
 ## How it works
 
-1. Dori builds a system prompt from `~/.dori/AGENTS.md` and available skills.
+1. Dori builds a system prompt from `~/.dori/DORI.md` and available skills.
 2. The `mnemo8` engine asks the local model to either answer normally or emit a skill JSON payload.
 3. If a skill is selected, or the user invokes `dori <skill-name>`, Dori runs the matching script from `~/.dori/scripts/`.
 4. The TUI continues to present the assistant as `Dori`.

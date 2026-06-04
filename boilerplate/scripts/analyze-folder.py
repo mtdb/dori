@@ -23,7 +23,6 @@ IGNORED_DIRS = {
     "vendor",
 }
 KNOWN_FILES = {
-    "AGENTS.md": "Dori/Codex agent instructions",
     "Cargo.toml": "Rust package",
     "Dockerfile": "Docker container build",
     "Gemfile": "Ruby dependencies",
@@ -36,6 +35,7 @@ KNOWN_FILES = {
     "poetry.lock": "Python Poetry lockfile",
     "pyproject.toml": "Python project metadata",
     "requirements.txt": "Python dependencies",
+    "DORI.md": "Dori persona instructions",
 }
 ENTRYPOINT_NAMES = {
     "app.py",

@@ -12,19 +12,19 @@ def get_runtime_home() -> Path:
 
 
 def load_agents() -> str | None:
-    """Load AGENTS.md from the user's ~/.dori directory."""
+    """Load DORI.md from the user's ~/.dori directory."""
     runtime_home = get_runtime_home()
-    agents_path = runtime_home / "AGENTS.md"
-    if not agents_path.is_file():
+    persona_path = runtime_home / "DORI.md"
+    if not persona_path.is_file():
         return None
 
     try:
-        return agents_path.read_text(encoding="utf-8")
+        return persona_path.read_text(encoding="utf-8")
     except UnicodeDecodeError:
-        print(f"Warning: Failed to decode {agents_path} as UTF-8. Skipping.")
+        print(f"Warning: Failed to decode {persona_path} as UTF-8. Skipping.")
         return None
     except Exception as e:
-        print(f"Warning: Could not read {agents_path}: {e}")
+        print(f"Warning: Could not read {persona_path}: {e}")
         return None
 
 

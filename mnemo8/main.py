@@ -9,7 +9,11 @@ from rich.console import Console
 from rich.markup import escape
 
 from mnemo8.chat import ConversationEngine
-from mnemo8.commands import init_workspace
+from mnemo8.commands import (
+    init_workspace,
+    migrate_legacy_persona_file,
+    update_workspace,
+)
 from mnemo8.loader import (
     get_runtime_home,
     load_agents,
@@ -69,6 +73,13 @@ def run():
         init_workspace(cwd)
         return
 
+    if args.command == "update":
+        if args.prompt:
+            print("-p/--prompt is not valid with 'update' command.", file=sys.stderr)
+            sys.exit(2)
+        update_workspace(cwd)
+        return
+
     if args.command:
         if args.prompt:
             print("-p/--prompt is not valid with skill commands.", file=sys.stderr)
@@ -81,7 +92,9 @@ def run():
         sys.exit(1)
 
     try:
-        # Step 2: Search for AGENTS.md
+        migrate_legacy_persona_file(runtime_home)
+
+        # Step 2: Search for DORI.md
         agents_content = load_agents()
 
         # Step 3: Search for skills/

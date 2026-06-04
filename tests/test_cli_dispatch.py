@@ -79,3 +79,18 @@ def test_cli_skill_inherits_terminal_for_interactive_scripts(tmp_path, monkeypat
     _, kwargs = calls[0]
     assert "capture_output" not in kwargs
     assert "text" not in kwargs
+
+
+def test_cli_dispatches_update_command(monkeypatch):
+    called = []
+
+    def fake_update_workspace(cwd):
+        called.append(cwd)
+
+    monkeypatch.setattr("mnemo8.main.update_workspace", fake_update_workspace)
+    monkeypatch.setattr("mnemo8.main.os.getcwd", lambda: "/tmp/dori-project")
+    monkeypatch.setattr(sys, "argv", ["dori", "update"])
+
+    run()
+
+    assert called == ["/tmp/dori-project"]
