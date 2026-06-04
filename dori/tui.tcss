@@ -1,4 +1,4 @@
-/* mnemo8/tui.tcss */
+/* dori/tui.tcss */
 
 NemoApp {
     background: #000000;

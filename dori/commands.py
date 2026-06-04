@@ -7,7 +7,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.prompt import Prompt
 
-from mnemo8.loader import get_runtime_home
+from dori.loader import get_runtime_home
 
 console = Console()
 

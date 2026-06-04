@@ -1,10 +1,10 @@
 import asyncio
 from types import SimpleNamespace
 
-from mnemo8.chat import ChatResponse, build_system_prompt, parse_skill
-from mnemo8.loader import load_available_vram
-from mnemo8.models import RuntimeState, Skill
-from mnemo8.tui import (
+from dori.chat import ChatResponse, build_system_prompt, parse_skill
+from dori.loader import load_available_vram
+from dori.models import RuntimeState, Skill
+from dori.tui import (
     MessageWidget,
     NemoApp,
     ThinkingWidget,
@@ -62,13 +62,13 @@ def test_cycle_history_empty_list():
 
 
 def test_load_input_history_returns_empty_when_file_missing(tmp_path, monkeypatch):
-    monkeypatch.setattr("mnemo8.tui.get_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr("dori.tui.get_runtime_home", lambda: tmp_path)
 
     assert load_input_history() == []
 
 
 def test_load_input_history_decodes_json_lines(tmp_path, monkeypatch):
-    monkeypatch.setattr("mnemo8.tui.get_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr("dori.tui.get_runtime_home", lambda: tmp_path)
     (tmp_path / ".history").write_text(
         '"hello world"\n"line\\nbreak"\n',
         encoding="utf-8",
@@ -78,7 +78,7 @@ def test_load_input_history_decodes_json_lines(tmp_path, monkeypatch):
 
 
 def test_load_input_history_ignores_invalid_lines(tmp_path, monkeypatch):
-    monkeypatch.setattr("mnemo8.tui.get_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr("dori.tui.get_runtime_home", lambda: tmp_path)
     (tmp_path / ".history").write_text(
         '"first"\nnot json\n42\n""\n"last"\n',
         encoding="utf-8",
@@ -88,7 +88,7 @@ def test_load_input_history_ignores_invalid_lines(tmp_path, monkeypatch):
 
 
 def test_append_input_history_keeps_last_100_messages(tmp_path, monkeypatch):
-    monkeypatch.setattr("mnemo8.tui.get_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr("dori.tui.get_runtime_home", lambda: tmp_path)
 
     for index in range(105):
         append_input_history(f"message {index}")
@@ -97,7 +97,7 @@ def test_append_input_history_keeps_last_100_messages(tmp_path, monkeypatch):
 
 
 def test_nemo_app_starts_with_persistent_input_history(tmp_path, monkeypatch):
-    monkeypatch.setattr("mnemo8.tui.get_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr("dori.tui.get_runtime_home", lambda: tmp_path)
     (tmp_path / ".history").write_text('"first"\n"second"\n', encoding="utf-8")
 
     app = NemoApp(RuntimeState(cwd="/tmp"))
@@ -106,7 +106,7 @@ def test_nemo_app_starts_with_persistent_input_history(tmp_path, monkeypatch):
 
 
 def test_submit_initial_prompt_persists_input_history(tmp_path, monkeypatch):
-    monkeypatch.setattr("mnemo8.tui.get_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr("dori.tui.get_runtime_home", lambda: tmp_path)
     state = RuntimeState(cwd="/tmp", initial_prompt="remind me at 9am")
     app = NemoApp(state)
     app._vram_poll_wakeup = asyncio.Event()
@@ -122,7 +122,7 @@ def test_submit_initial_prompt_persists_input_history(tmp_path, monkeypatch):
 
 
 def test_on_input_submitted_persists_normal_messages(tmp_path, monkeypatch):
-    monkeypatch.setattr("mnemo8.tui.get_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr("dori.tui.get_runtime_home", lambda: tmp_path)
     state = RuntimeState(cwd="/tmp")
     app = NemoApp(state)
     app._vram_poll_wakeup = asyncio.Event()
@@ -144,7 +144,7 @@ def test_on_input_submitted_persists_normal_messages(tmp_path, monkeypatch):
 
 
 def test_clear_command_keeps_persistent_input_history(tmp_path, monkeypatch):
-    monkeypatch.setattr("mnemo8.tui.get_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr("dori.tui.get_runtime_home", lambda: tmp_path)
     append_input_history("first")
     app = NemoApp(RuntimeState(cwd="/tmp"))
 
@@ -439,7 +439,7 @@ def test_action_copy_chat_copies_visible_chat_and_notifies(monkeypatch):
         notifications.append((message, title, severity))
 
     monkeypatch.setattr(app, "query_one", fake_query_one)
-    monkeypatch.setattr("mnemo8.tui._write_clipboard", fake_write_clipboard)
+    monkeypatch.setattr("dori.tui._write_clipboard", fake_write_clipboard)
     monkeypatch.setattr(app, "notify", fake_notify)
 
     app.action_copy_chat()
@@ -476,7 +476,7 @@ def test_action_copy_chat_warns_when_chat_is_empty(monkeypatch):
         notifications.append((message, title, severity))
 
     monkeypatch.setattr(app, "query_one", fake_query_one)
-    monkeypatch.setattr("mnemo8.tui._write_clipboard", fake_write_clipboard)
+    monkeypatch.setattr("dori.tui._write_clipboard", fake_write_clipboard)
     monkeypatch.setattr(app, "notify", fake_notify)
 
     app.action_copy_chat()
@@ -506,7 +506,7 @@ def test_load_available_vram_sums_all_gpus(monkeypatch):
     def fake_run(*args, **kwargs):
         return Result()
 
-    monkeypatch.setattr("mnemo8.loader.subprocess.run", fake_run)
+    monkeypatch.setattr("dori.loader.subprocess.run", fake_run)
 
     assert load_available_vram() == (6144, 12288)
 
@@ -515,7 +515,7 @@ def test_load_available_vram_returns_none_tuple_when_command_missing(monkeypatch
     def fake_run(*args, **kwargs):
         raise FileNotFoundError()
 
-    monkeypatch.setattr("mnemo8.loader.subprocess.run", fake_run)
+    monkeypatch.setattr("dori.loader.subprocess.run", fake_run)
 
     assert load_available_vram() == (None, None)
 

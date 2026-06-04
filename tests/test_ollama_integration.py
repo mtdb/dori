@@ -4,10 +4,10 @@ from typing import Any
 
 import pytest
 
-from mnemo8.chat import ConversationEngine
-from mnemo8.commands import init_workspace
-from mnemo8.loader import load_agents, load_skills
-from mnemo8.models import RuntimeState
+from dori.chat import ConversationEngine
+from dori.commands import init_workspace
+from dori.loader import load_agents, load_skills
+from dori.models import RuntimeState
 
 INTEGRATION_MODEL = "llama3.1:8b"
 DETERMINISTIC_OPTIONS = {

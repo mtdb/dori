@@ -1,5 +1,5 @@
 """
-Tests for the conversation engine (mnemo8.chat).
+Tests for the conversation engine (dori.chat).
 
 These tests cover business logic: skill parsing, system prompt construction,
 skill execution, and the full ConversationEngine.send() turn lifecycle.
@@ -11,7 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
-from mnemo8.chat import (
+from dori.chat import (
     ChatResponse,
     ConversationEngine,
     build_system_prompt,
@@ -19,7 +19,7 @@ from mnemo8.chat import (
     run_skill,
     strip_skill_payload,
 )
-from mnemo8.models import RuntimeState, Skill
+from dori.models import RuntimeState, Skill
 
 # ---------------------------------------------------------------------------
 # parse_skill
@@ -81,7 +81,7 @@ def test_build_system_prompt_base():
     state = RuntimeState(cwd="/tmp")
     prompt = build_system_prompt(state)
     assert "You are Dori" in prompt
-    assert "mnemo8 engine" in prompt
+    assert "route clear requests" in prompt
 
 
 def test_build_system_prompt_includes_skill_content():
@@ -151,7 +151,7 @@ def test_engine_send_plain_response():
     state = RuntimeState(cwd="/tmp")
     engine = ConversationEngine(state)
 
-    with patch("mnemo8.chat.ollama.chat", return_value=_make_ollama_response("Paris.")):
+    with patch("dori.chat.ollama.chat", return_value=_make_ollama_response("Paris.")):
         response = asyncio.run(engine.send("What is the capital of France?"))
 
     assert isinstance(response, ChatResponse)
@@ -165,7 +165,7 @@ def test_engine_send_appends_to_history():
     state = RuntimeState(cwd="/tmp")
     engine = ConversationEngine(state)
 
-    with patch("mnemo8.chat.ollama.chat", return_value=_make_ollama_response("Hi!")):
+    with patch("dori.chat.ollama.chat", return_value=_make_ollama_response("Hi!")):
         asyncio.run(engine.send("Hello"))
 
     assert engine.messages[1] == {"role": "user", "content": "Hello"}
@@ -176,7 +176,7 @@ def test_engine_send_removes_user_message_on_ollama_error():
     state = RuntimeState(cwd="/tmp")
     engine = ConversationEngine(state)
 
-    with patch("mnemo8.chat.ollama.chat", side_effect=RuntimeError("conn failed")):
+    with patch("dori.chat.ollama.chat", side_effect=RuntimeError("conn failed")):
         with pytest.raises(RuntimeError):
             asyncio.run(engine.send("Hello"))
 
@@ -190,8 +190,8 @@ def test_engine_send_executes_high_confidence_skill():
 
     raw = '{"skill": "search", "query": "Madrid weather", "confidence": 0.92}'
     with (
-        patch("mnemo8.chat.ollama.chat", return_value=_make_ollama_response(raw)),
-        patch("mnemo8.chat.run_skill", return_value="22°C, sunny") as mock_run,
+        patch("dori.chat.ollama.chat", return_value=_make_ollama_response(raw)),
+        patch("dori.chat.run_skill", return_value="22°C, sunny") as mock_run,
     ):
         response = asyncio.run(engine.send("What's the weather in Madrid?"))
 
@@ -213,8 +213,8 @@ def test_engine_send_executes_skill_from_runtime_cwd():
         '"raw_text": "analize this folder"}'
     )
     with (
-        patch("mnemo8.chat.ollama.chat", return_value=_make_ollama_response(raw)),
-        patch("mnemo8.chat.run_skill", return_value="folder summary") as mock_run,
+        patch("dori.chat.ollama.chat", return_value=_make_ollama_response(raw)),
+        patch("dori.chat.run_skill", return_value="folder summary") as mock_run,
     ):
         response = asyncio.run(engine.send("analize this folder"))
 
@@ -238,10 +238,10 @@ def test_run_skill_executes_script_from_runtime_cwd():
     }
 
     with (
-        patch("mnemo8.chat.get_runtime_home", return_value="/home/user/.dori"),
-        patch("mnemo8.chat.os.path.isfile", return_value=True),
+        patch("dori.chat.get_runtime_home", return_value="/home/user/.dori"),
+        patch("dori.chat.os.path.isfile", return_value=True),
         patch(
-            "mnemo8.chat.subprocess.run",
+            "dori.chat.subprocess.run",
             return_value=SimpleNamespace(stdout="folder summary\n"),
         ) as mock_run,
     ):
@@ -257,8 +257,8 @@ def test_engine_send_ignores_low_confidence_skill():
 
     raw = '{"skill": "search", "query": "Madrid weather", "confidence": 0.42}'
     with (
-        patch("mnemo8.chat.ollama.chat", return_value=_make_ollama_response(raw)),
-        patch("mnemo8.chat.run_skill") as mock_run,
+        patch("dori.chat.ollama.chat", return_value=_make_ollama_response(raw)),
+        patch("dori.chat.run_skill") as mock_run,
     ):
         response = asyncio.run(engine.send("What's the weather?"))
 
@@ -272,8 +272,8 @@ def test_engine_send_shows_raw_json_in_debug_mode():
 
     raw = '{"skill": "search", "query": "news", "confidence": 0.9}'
     with (
-        patch("mnemo8.chat.ollama.chat", return_value=_make_ollama_response(raw)),
-        patch("mnemo8.chat.run_skill", return_value="some result"),
+        patch("dori.chat.ollama.chat", return_value=_make_ollama_response(raw)),
+        patch("dori.chat.run_skill", return_value="some result"),
     ):
         response = asyncio.run(engine.send("latest news"))
 
@@ -286,7 +286,7 @@ def test_engine_send_returns_fallback_when_display_is_empty():
 
     # Standalone JSON with no prose → strip_skill_payload returns "" → fallback
     raw = '{"skill": "search", "query": "x", "confidence": 0.3}'
-    with patch("mnemo8.chat.ollama.chat", return_value=_make_ollama_response(raw)):
+    with patch("dori.chat.ollama.chat", return_value=_make_ollama_response(raw)):
         response = asyncio.run(engine.send("x"))
 
     assert (
@@ -306,8 +306,8 @@ def test_engine_send_returns_clarify_when_required_fields_missing():
 
     raw = '{"skill": "calendar", "confidence": 0.95}'
     with (
-        patch("mnemo8.chat.ollama.chat", return_value=_make_ollama_response(raw)),
-        patch("mnemo8.chat.run_skill") as mock_run,
+        patch("dori.chat.ollama.chat", return_value=_make_ollama_response(raw)),
+        patch("dori.chat.run_skill") as mock_run,
     ):
         response = asyncio.run(engine.send("Schedule team sync tomorrow"))
 
@@ -321,7 +321,7 @@ def test_engine_translate_to_english_uses_isolated_model_call():
     engine = ConversationEngine(state)
 
     with patch(
-        "mnemo8.chat.ollama.chat",
+        "dori.chat.ollama.chat",
         return_value=_make_ollama_response("Summarize this folder."),
     ) as mock_chat:
         result = asyncio.run(engine.translate_to_english("Resume esta carpeta."))
@@ -342,7 +342,7 @@ def test_engine_translate_to_english_wraps_question_as_text_to_translate():
     engine = ConversationEngine(state)
 
     with patch(
-        "mnemo8.chat.ollama.chat",
+        "dori.chat.ollama.chat",
         return_value=_make_ollama_response("Where is Spain?"),
     ) as mock_chat:
         result = asyncio.run(engine.translate_to_english("donde esta españa?"))
@@ -360,7 +360,7 @@ def test_engine_translate_to_english_strips_model_content():
     engine = ConversationEngine(state)
 
     with patch(
-        "mnemo8.chat.ollama.chat",
+        "dori.chat.ollama.chat",
         return_value=_make_ollama_response("\n  Explain the latest logs.  \n"),
     ):
         result = asyncio.run(engine.translate_to_english("Explica los últimos logs."))
@@ -373,7 +373,7 @@ def test_engine_translate_to_english_failure_does_not_mutate_history():
     engine = ConversationEngine(state)
     original_messages = list(engine.messages)
 
-    with patch("mnemo8.chat.ollama.chat", side_effect=RuntimeError("conn failed")):
+    with patch("dori.chat.ollama.chat", side_effect=RuntimeError("conn failed")):
         with pytest.raises(RuntimeError):
             asyncio.run(engine.translate_to_english("Hola"))
 
@@ -398,9 +398,9 @@ def test_engine_send_extracts_git_payload_when_topic_missing():
     ]
 
     with (
-        patch("mnemo8.chat.ollama.chat", side_effect=responses),
+        patch("dori.chat.ollama.chat", side_effect=responses),
         patch(
-            "mnemo8.chat.run_skill", return_value="🌿 [Git - rebase]\nSummary: ok"
+            "dori.chat.run_skill", return_value="🌿 [Git - rebase]\nSummary: ok"
         ) as mock_run,
     ):
         response = asyncio.run(engine.send("How do I squash commits?"))

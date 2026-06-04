@@ -1,7 +1,7 @@
 import subprocess
 from pathlib import Path
 
-from mnemo8.models import Skill
+from dori.models import Skill
 
 RUNTIME_HOME_DIRNAME = ".dori"
 

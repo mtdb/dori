@@ -8,24 +8,24 @@ import sys
 from rich.console import Console
 from rich.markup import escape
 
-from mnemo8.chat import ConversationEngine
-from mnemo8.commands import (
+from dori.chat import ConversationEngine
+from dori.commands import (
     init_workspace,
     migrate_legacy_persona_file,
     update_workspace,
 )
-from mnemo8.loader import (
+from dori.loader import (
     get_runtime_home,
     load_agents,
     load_available_vram,
     load_skills,
 )
-from mnemo8.models import RuntimeState
-from mnemo8.tui import start_tui
+from dori.models import RuntimeState
+from dori.tui import start_tui
 
 
 def _read_debug_flag() -> bool:
-    return os.environ.get("MNEMO8_DEBUG", "").strip().lower() in {
+    return os.environ.get("DORI_DEBUG", "").strip().lower() in {
         "1",
         "true",
         "yes",
@@ -34,7 +34,7 @@ def _read_debug_flag() -> bool:
 
 
 def _read_skill_confidence_threshold() -> float:
-    raw_value = os.environ.get("MNEMO8_SKILL_CONFIDENCE_THRESHOLD")
+    raw_value = os.environ.get("DORI_SKILL_CONFIDENCE_THRESHOLD")
     if raw_value is None:
         return 0.8
     try:
@@ -46,9 +46,7 @@ def _read_skill_confidence_threshold() -> float:
 
 def run():
     """Main entry point for the Dori CLI."""
-    parser = argparse.ArgumentParser(
-        description="Dori personal assistant powered by the mnemo8 engine"
-    )
+    parser = argparse.ArgumentParser(description="Dori personal assistant")
     parser.add_argument(
         "-p",
         "--prompt",

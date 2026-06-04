@@ -1,8 +1,8 @@
 """
-TUI layer for mnemo8.
+TUI layer for dori.
 
 All business logic (LLM calls, skill resolution, display-text construction)
-lives in mnemo8.chat.  This module is responsible only for the Textual UI:
+lives in dori.chat.  This module is responsible only for the Textual UI:
 widgets, layout, user input, VRAM header, clipboard, and triggering the
 conversation engine.
 """
@@ -25,15 +25,15 @@ from textual.containers import Horizontal, ScrollableContainer
 from textual.widget import Widget
 from textual.widgets import Input, Static
 
-from mnemo8.chat import (
+from dori.chat import (
     ChatResponse,
     ConversationEngine,
     build_system_prompt,
     parse_skill,
     run_skill,
 )
-from mnemo8.loader import get_runtime_home, load_available_vram
-from mnemo8.models import RuntimeState
+from dori.loader import get_runtime_home, load_available_vram
+from dori.models import RuntimeState
 
 # ---------------------------------------------------------------------------
 # Backward-compat aliases used by existing tests

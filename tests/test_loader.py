@@ -1,4 +1,4 @@
-from mnemo8.loader import load_agents
+from dori.loader import load_agents
 
 
 def test_load_agents_reads_dori_md(tmp_path, monkeypatch):

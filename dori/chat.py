@@ -1,5 +1,5 @@
 """
-Conversation engine for mnemo8.
+Conversation engine for dori.
 
 Holds all business logic: message history, LLM calls, skill resolution,
 and display-text construction.  Both the TUI and the inline CLI use this
@@ -16,9 +16,9 @@ from dataclasses import dataclass
 
 import ollama
 
-from mnemo8.loader import get_runtime_home
-from mnemo8.models import RuntimeState
-from mnemo8.schemas import validate_skill_payload
+from dori.loader import get_runtime_home
+from dori.models import RuntimeState
+from dori.schemas import validate_skill_payload
 
 
 def _chat_with_model(state: RuntimeState, messages: list[dict]) -> dict:
@@ -118,7 +118,7 @@ def strip_skill_payload(content: str) -> str:
 def build_system_prompt(state: RuntimeState) -> str:
     prompt = (
         "You are Dori, a helpful personal assistant CLI running on the user's terminal.\n"
-        "Dori is powered by the mnemo8 engine.\n"
+        "You run locally and can route clear requests to installed skills.\n"
         f"Current working directory: {state.cwd}\n"
         "When the user says this folder, this directory, the current directory, "
         "or here, treat that as the current working directory.\n"

@@ -2,7 +2,7 @@ import hashlib
 import json
 from pathlib import Path
 
-from mnemo8.commands import _choose_reminders_backend, init_workspace, update_workspace
+from dori.commands import _choose_reminders_backend, init_workspace, update_workspace
 
 ROOT = Path(__file__).resolve().parents[1]
 

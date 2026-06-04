@@ -78,15 +78,15 @@ recall previous prompts with ↑/↓.
 ## How it works
 
 1. Dori builds a system prompt from `~/.dori/DORI.md` and available skills.
-2. The `mnemo8` engine asks the local model to either answer normally or emit a skill JSON payload.
+2. The conversation engine asks the local model to either answer normally or emit a skill JSON payload.
 3. If a skill is selected, or the user invokes `dori <skill-name>`, Dori runs the matching script from `~/.dori/scripts/`.
 4. The TUI continues to present the assistant as `Dori`.
 
 ## Development
 
 - Public packaging and CLI surface are `dori`.
-- Internal modules, imports, and tests still use `mnemo8`.
-- Boilerplate and onboarding text should refer to Dori unless they are describing the engine explicitly.
+- Internal modules live under the `dori` package.
+- Boilerplate and onboarding text should refer to Dori.
 
 ## Tests
 

@@ -3,7 +3,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from mnemo8.main import run, run_cli_skill
+from dori.main import run, run_cli_skill
 
 
 def test_cli_dispatches_skill_name_to_runtime_script(tmp_path, monkeypatch, capfd):
@@ -18,7 +18,7 @@ def test_cli_dispatches_skill_name_to_runtime_script(tmp_path, monkeypatch, capf
         encoding="utf-8",
     )
 
-    monkeypatch.setattr("mnemo8.main.get_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr("dori.main.get_runtime_home", lambda: tmp_path)
     monkeypatch.setattr(sys, "argv", ["dori", "commit"])
 
     with pytest.raises(SystemExit) as exit_info:
@@ -30,7 +30,7 @@ def test_cli_dispatches_skill_name_to_runtime_script(tmp_path, monkeypatch, capf
 
 def test_cli_dispatch_reports_missing_skill_script(tmp_path, monkeypatch, capsys):
     (tmp_path / "scripts").mkdir()
-    monkeypatch.setattr("mnemo8.main.get_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr("dori.main.get_runtime_home", lambda: tmp_path)
     monkeypatch.setattr(sys, "argv", ["dori", "unknown-skill"])
 
     with pytest.raises(SystemExit) as exit_info:
@@ -48,7 +48,7 @@ def test_cli_dispatch_does_not_execute_private_helper_scripts(
     (scripts_dir / "_helper.py").write_text(
         "print('should not run')\n", encoding="utf-8"
     )
-    monkeypatch.setattr("mnemo8.main.get_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr("dori.main.get_runtime_home", lambda: tmp_path)
     monkeypatch.setattr(sys, "argv", ["dori", "_helper"])
 
     with pytest.raises(SystemExit) as exit_info:
@@ -71,8 +71,8 @@ def test_cli_skill_inherits_terminal_for_interactive_scripts(tmp_path, monkeypat
         calls.append((cmd, kwargs))
         return SimpleNamespace(returncode=0, stdout="", stderr="")
 
-    monkeypatch.setattr("mnemo8.main.get_runtime_home", lambda: tmp_path)
-    monkeypatch.setattr("mnemo8.main.subprocess.run", fake_run)
+    monkeypatch.setattr("dori.main.get_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr("dori.main.subprocess.run", fake_run)
 
     assert run_cli_skill("commit", [], str(tmp_path)) == 0
 
@@ -87,8 +87,8 @@ def test_cli_dispatches_update_command(monkeypatch):
     def fake_update_workspace(cwd):
         called.append(cwd)
 
-    monkeypatch.setattr("mnemo8.main.update_workspace", fake_update_workspace)
-    monkeypatch.setattr("mnemo8.main.os.getcwd", lambda: "/tmp/dori-project")
+    monkeypatch.setattr("dori.main.update_workspace", fake_update_workspace)
+    monkeypatch.setattr("dori.main.os.getcwd", lambda: "/tmp/dori-project")
     monkeypatch.setattr(sys, "argv", ["dori", "update"])
 
     run()

@@ -1,7 +1,7 @@
 # How it works
 
 Dori is a local-first terminal assistant. The public command is `dori`; the
-internal engine lives in the `mnemo8` package.
+internal engine lives in the `dori` package.
 
 Dori separates model routing from deterministic execution:
 
@@ -43,10 +43,10 @@ The CLI entrypoint is registered in `pyproject.toml`:
 
 ```toml
 [project.scripts]
-dori = "mnemo8.main:run"
+dori = "dori.main:run"
 ```
 
-`mnemo8.main.run()` parses `dori`, `dori --prompt "..."`, `dori init`,
+`dori.main.run()` parses `dori`, `dori --prompt "..."`, `dori init`,
 `dori update`, or `dori <skill-name>`. `dori init` calls `init_workspace()` and
 copies missing boilerplate files into `~/.dori`. `dori update` calls
 `update_workspace()` and refreshes only unmodified managed files according to
@@ -59,7 +59,7 @@ small CLI payload with `cli: true`. That keeps the core generic while still
 letting action-oriented skills such as `commit` expose a native command.
 
 The TUI handles display, input, history, clipboard, and VRAM refreshes. The
-conversation logic lives in `mnemo8.chat.ConversationEngine`, so TUI mode and
+conversation logic lives in `dori.chat.ConversationEngine`, so TUI mode and
 inline mode use the same behavior.
 
 ## System prompt
@@ -78,7 +78,7 @@ A skill payload looks like this:
 ```
 
 `confidence` must be between `0.0` and `1.0`. The default threshold is `0.8`;
-override it with `MNEMO8_SKILL_CONFIDENCE_THRESHOLD`.
+override it with `DORI_SKILL_CONFIDENCE_THRESHOLD`.
 
 ## Skills
 
@@ -211,11 +211,11 @@ when local documentation is unavailable or insufficient.
 dori
 dori --prompt "Summarize my open tasks"
 dori init
-MNEMO8_DEBUG=1
-MNEMO8_SKILL_CONFIDENCE_THRESHOLD=0.7
+DORI_DEBUG=1
+DORI_SKILL_CONFIDENCE_THRESHOLD=0.7
 ```
 
-`MNEMO8_DEBUG` shows raw debugging content. The threshold variable controls the
+`DORI_DEBUG` shows raw debugging content. The threshold variable controls the
 minimum accepted skill confidence and is clamped to `0.0` to `1.0`.
 
 ## Extending Dori

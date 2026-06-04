@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "dori"
 version = "0.1.0"
-description = "Dori terminal assistant powered by the mnemo8 engine"
+description = "Dori terminal assistant"
 readme = "README.md"
 requires-python = ">=3.11,<4.0"
 dependencies = [
@@ -16,16 +16,16 @@ dependencies = [
 ]
 
 [project.scripts]
-dori = "mnemo8.main:run"
+dori = "dori.main:run"
 
 [project.optional-dependencies]
 dev = ["pytest>=8.0", "ruff", "mypy", "pre-commit"]
 
 [tool.setuptools]
-packages = ["mnemo8"]
+packages = ["dori"]
 
 [tool.poetry]
-packages = [{ include = "mnemo8" }]
+packages = [{ include = "dori" }]
 
 [tool.ruff]
 target-version = "py311"
