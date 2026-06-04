@@ -16,6 +16,7 @@ import sys
 import time
 from contextlib import suppress
 
+from rich.markup import escape
 from rich.text import Text
 from textual import events
 from textual.app import App, ComposeResult
@@ -55,6 +56,8 @@ VRAM_POLL_BURST_WINDOW_SECONDS = 13.0
 VRAM_POLL_TAU_SECONDS = 60.0
 VRAM_POLL_BUCKETS = (1, 5, 10, 15, 20, 30)
 VRAM_UPDATE_THRESHOLD_MIB = 64
+TRANSLATION_PROMPT_LABEL = "❯"
+TRANSLATION_INDICATOR_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
 
 
 # ---------------------------------------------------------------------------
@@ -271,6 +274,9 @@ class NemoApp(App):
         self._last_user_activity_monotonic: float | None = None
         self._vram_poll_wakeup: asyncio.Event | None = None
         self._vram_poll_task: asyncio.Task[None] | None = None
+        self._translation_in_progress = False
+        self._translation_indicator_task: asyncio.Task[None] | None = None
+        self._translation_indicator_frame_index = 0
         super().__init__()
 
     # Keep _messages as a property so legacy tests that read/write it still work
@@ -290,7 +296,7 @@ class NemoApp(App):
         )
         yield MessageList()
         yield Horizontal(
-            Static("❯", id="prompt-label"),
+            Static(TRANSLATION_PROMPT_LABEL, id="prompt-label"),
             NemoInput(placeholder="Type a message…"),
             id="input-bar",
         )
@@ -305,6 +311,9 @@ class NemoApp(App):
         text.append(" history  ", style="#444444")
         text.append("[ctrl+r]", style=COLOR_USER)
         text.append(" retry", style="#444444")
+        text.append("  ", style="#444444")
+        text.append("[ctrl+t]", style=COLOR_USER)
+        text.append(" translate", style="#444444")
         text.append("  ", style="#444444")
         text.append("[/clear]", style=COLOR_USER)
         text.append(" clear  ", style="#444444")
@@ -336,6 +345,7 @@ class NemoApp(App):
             await self._vram_poll_task
         self._vram_poll_task = None
         self._vram_poll_wakeup = None
+        await self._stop_translation_indicator()
 
     def _mark_vram_activity(self) -> None:
         self._last_user_activity_monotonic = time.monotonic()
@@ -383,6 +393,10 @@ class NemoApp(App):
             await self._handle_retry()
             event.prevent_default()
             event.stop()
+        if event.key == "ctrl+t":
+            await self._handle_translate_input()
+            event.prevent_default()
+            event.stop()
 
     def action_copy_chat(self) -> None:
         self._copy_chat_to_clipboard()
@@ -397,6 +411,38 @@ class NemoApp(App):
         inp = self.query_one(NemoInput)
         inp.value = value
         inp.cursor_position = len(value)
+
+    def _set_prompt_label(self, value: str) -> None:
+        self.query_one("#prompt-label", Static).update(value)
+
+    async def _run_translation_indicator(self) -> None:
+        while True:
+            await asyncio.sleep(0.12)
+            self._translation_indicator_frame_index = (
+                self._translation_indicator_frame_index + 1
+            ) % len(TRANSLATION_INDICATOR_FRAMES)
+            self._set_prompt_label(
+                TRANSLATION_INDICATOR_FRAMES[self._translation_indicator_frame_index]
+            )
+
+    def _start_translation_indicator(self) -> None:
+        self._translation_indicator_frame_index = 0
+        self._set_prompt_label(TRANSLATION_INDICATOR_FRAMES[0])
+        if (
+            self._translation_indicator_task is None
+            or self._translation_indicator_task.done()
+        ):
+            self._translation_indicator_task = asyncio.create_task(
+                self._run_translation_indicator()
+            )
+
+    async def _stop_translation_indicator(self) -> None:
+        if self._translation_indicator_task is not None:
+            self._translation_indicator_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._translation_indicator_task
+            self._translation_indicator_task = None
+        self._set_prompt_label(TRANSLATION_PROMPT_LABEL)
 
     async def _send_message(self, user_input: str) -> None:
         msg_list = self.query_one(MessageList)
@@ -459,6 +505,40 @@ class NemoApp(App):
         self._history_idx = -1
         self._mark_vram_activity()
         await self._send_message(self._last_user_input)
+
+    async def _handle_translate_input(self) -> None:
+        if self._translation_in_progress:
+            return
+        inp = self.query_one(NemoInput)
+        draft = inp.value.strip()
+        if not draft:
+            return
+
+        self._translation_in_progress = True
+        self._mark_vram_activity()
+        self._start_translation_indicator()
+        try:
+            translated = (await self._engine.translate_to_english(draft)).strip()
+        except Exception as e:
+            self.notify(
+                f"Translation failed: {escape(str(e))}",
+                title=AGENT_DISPLAY_NAME,
+                severity="error",
+            )
+            return
+        finally:
+            self._translation_in_progress = False
+            await self._stop_translation_indicator()
+
+        if not translated:
+            self.notify(
+                "Translation returned an empty result",
+                title=AGENT_DISPLAY_NAME,
+                severity="warning",
+            )
+            return
+        inp.value = translated
+        inp.cursor_position = len(translated)
 
     async def _handle_clear(self) -> None:
         msg_list = self.query_one(MessageList)
