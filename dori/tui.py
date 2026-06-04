@@ -235,7 +235,7 @@ class ThinkingWidget(Static):
 
 
 class MessageList(ScrollableContainer):
-    pass
+    FOCUS_ON_CLICK = False
 
 
 def _build_chat_transcript(widgets: list[Widget]) -> str:
