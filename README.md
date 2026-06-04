@@ -34,6 +34,14 @@ dori
 dori --prompt "Summarize my open tasks"
 ```
 
+## Better Prompts With Ctrl+T
+
+Dori is designed to work well with small local models. Since these models often perform best with English prompts, the TUI includes a built-in translation shortcut:
+
+Press `Ctrl+T` while writing a message to translate your draft into natural English before sending it.
+
+This lets you think in your own language while giving the model a clearer prompt. Dori preserves code, commands, file paths, URLs, identifiers, and quoted literals whenever possible, so technical instructions stay intact.
+
 ## Global install
 
 For a global CLI install, prefer `pipx`:
