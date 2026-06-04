@@ -83,10 +83,10 @@ def test_detect_scope_prefers_shared_meaningful_directory():
 
 
 def test_amend_qualifies_only_for_matching_unpushed_type_and_scope():
-    assert amend_qualifies("fix(tui): 🐛 update input", "fix", "tui", pushed=False)
-    assert not amend_qualifies("fix(tui): 🐛 update input", "feat", "tui", pushed=False)
-    assert not amend_qualifies("fix(tui): 🐛 update input", "fix", "chat", pushed=False)
-    assert not amend_qualifies("fix(tui): 🐛 update input", "fix", "tui", pushed=True)
+    assert amend_qualifies("fix(tui): update input", "fix", "tui", pushed=False)
+    assert not amend_qualifies("fix(tui): update input", "feat", "tui", pushed=False)
+    assert not amend_qualifies("fix(tui): update input", "fix", "chat", pushed=False)
+    assert not amend_qualifies("fix(tui): update input", "fix", "tui", pushed=True)
 
 
 def test_build_commit_message_uses_conventional_commit_with_body_for_multiple_files():
@@ -97,13 +97,10 @@ def test_build_commit_message_uses_conventional_commit_with_body_for_multiple_fi
         ],
         commit_type="fix",
         scope="chat",
-        emoji="🐛",
     )
 
     assert build_commit_message(group) == (
-        "fix(chat): 🐛 update chat\n\n"
-        "🔧 update mnemo8/chat.py\n"
-        "✅ update tests/test_chat.py"
+        "fix(chat): update chat\n\nupdate mnemo8/chat.py\nupdate tests/test_chat.py"
     )
 
 
@@ -123,7 +120,6 @@ def test_build_commit_message_prompt_includes_group_context():
         ],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
 
     messages = build_commit_message_prompt(group)
@@ -133,12 +129,23 @@ def test_build_commit_message_prompt_includes_group_context():
     user_prompt = messages[1]["content"]
     assert "Detected type: fix" in user_prompt
     assert "Detected scope: commit" in user_prompt
-    assert "Expected emoji: 🐛" in user_prompt
     assert "File status: modified" in user_prompt
     assert 'Untrusted file path: "mnemo8/commit_workflow.py"' in user_prompt
     assert 'Untrusted file path: "tests/test_commit_workflow.py"' in user_prompt
     assert "suggest_commit_message" in user_prompt
     assert "test_suggest_commit_message" in user_prompt
+
+
+def test_build_commit_message_prompt_forbids_emoji():
+    group = CommitGroup(
+        files=[ChangedFile("tests/test_commit_workflow.py", "modified", diff="+test")],
+        commit_type="test",
+        scope="tests",
+    )
+
+    system_prompt = build_commit_message_prompt(group)[0]["content"].lower()
+
+    assert "do not use emoji" in system_prompt
 
 
 def test_build_commit_message_prompt_includes_renamed_source_path():
@@ -153,7 +160,6 @@ def test_build_commit_message_prompt_includes_renamed_source_path():
         ],
         commit_type="refactor",
         scope="commit",
-        emoji="♻️",
     )
 
     user_prompt = build_commit_message_prompt(group)[1]["content"]
@@ -177,7 +183,6 @@ def test_build_commit_message_prompt_trims_diff_content_to_line_limit():
         ],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
 
     user_prompt = build_commit_message_prompt(group)[1]["content"]
@@ -197,7 +202,6 @@ def test_build_commit_message_prompt_avoids_triple_backtick_fences_from_diffs():
         ],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
 
     user_prompt = build_commit_message_prompt(group)[1]["content"]
@@ -224,7 +228,6 @@ def test_build_commit_message_prompt_frames_diff_content_as_untrusted_data():
         ],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
 
     messages = build_commit_message_prompt(group)
@@ -256,7 +259,6 @@ def test_build_commit_message_prompt_escapes_untrusted_paths_as_data_strings():
         ],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
 
     user_prompt = build_commit_message_prompt(group)[1]["content"]
@@ -277,7 +279,6 @@ def test_build_commit_message_prompt_says_no_scope_omits_parentheses():
         files=[ChangedFile("README.md", "modified", diff="+docs")],
         commit_type="docs",
         scope="",
-        emoji="📝",
     )
 
     messages = build_commit_message_prompt(group)
@@ -291,14 +292,13 @@ def test_validate_llm_commit_message_accepts_matching_conventional_message():
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
 
     message = validate_llm_commit_message(
-        "fix(commit): 🐛 generate specific commit messages", group
+        "fix(commit): generate specific commit messages", group
     )
 
-    assert message == "fix(commit): 🐛 generate specific commit messages"
+    assert message == "fix(commit): generate specific commit messages"
 
 
 def test_validate_llm_commit_message_preserves_valid_body_formatting():
@@ -306,14 +306,13 @@ def test_validate_llm_commit_message_preserves_valid_body_formatting():
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
 
     message = validate_llm_commit_message(
-        "fix(commit): 🐛 improve commits\n\nPreserve body spacing", group
+        "fix(commit): improve commits\n\nPreserve body spacing", group
     )
 
-    assert message == "fix(commit): 🐛 improve commits\n\nPreserve body spacing"
+    assert message == "fix(commit): improve commits\n\nPreserve body spacing"
 
 
 def test_validate_llm_commit_message_rejects_markdown_and_explanations():
@@ -321,24 +320,21 @@ def test_validate_llm_commit_message_rejects_markdown_and_explanations():
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
 
     assert (
+        validate_llm_commit_message("```text\nfix(commit): improve commits\n```", group)
+        is None
+    )
+    assert (
         validate_llm_commit_message(
-            "```text\nfix(commit): 🐛 improve commits\n```", group
+            "Here is the message:\nfix(commit): improve commits", group
         )
         is None
     )
     assert (
         validate_llm_commit_message(
-            "Here is the message:\nfix(commit): 🐛 improve commits", group
-        )
-        is None
-    )
-    assert (
-        validate_llm_commit_message(
-            "fix(commit): 🐛 improve commits\n\nExplanation: clearer summary",
+            "fix(commit): improve commits\n\nExplanation: clearer summary",
             group,
         )
         is None
@@ -350,12 +346,9 @@ def test_validate_llm_commit_message_rejects_generic_update_with_article():
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
 
-    assert (
-        validate_llm_commit_message("fix(commit): 🐛 update the project", group) is None
-    )
+    assert validate_llm_commit_message("fix(commit): update the project", group) is None
 
 
 def test_validate_llm_commit_message_rejects_type_or_scope_mismatch():
@@ -363,13 +356,10 @@ def test_validate_llm_commit_message_rejects_type_or_scope_mismatch():
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
 
-    assert (
-        validate_llm_commit_message("feat(commit): ✨ improve commits", group) is None
-    )
-    assert validate_llm_commit_message("fix(chat): 🐛 improve commits", group) is None
+    assert validate_llm_commit_message("feat(commit): improve commits", group) is None
+    assert validate_llm_commit_message("fix(chat): improve commits", group) is None
 
 
 def test_validate_llm_commit_message_rejects_empty_scope_parentheses():
@@ -377,10 +367,21 @@ def test_validate_llm_commit_message_rejects_empty_scope_parentheses():
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
         commit_type="fix",
         scope="",
-        emoji="🐛",
     )
 
-    assert validate_llm_commit_message("fix(): 🐛 improve commits", group) is None
+    assert validate_llm_commit_message("fix(): improve commits", group) is None
+
+
+def test_validate_llm_commit_message_rejects_emoji():
+    group = CommitGroup(
+        files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
+        commit_type="fix",
+        scope="commit",
+    )
+
+    message = f"fix(commit): {chr(0x1F41B)} improve commits"
+
+    assert validate_llm_commit_message(message, group) is None
 
 
 def test_suggest_commit_message_returns_valid_ollama_response(monkeypatch):
@@ -391,9 +392,7 @@ def test_suggest_commit_message_returns_valid_ollama_response(monkeypatch):
         def chat(model, messages, options):
             calls.append((model, messages, options))
             return {
-                "message": {
-                    "content": "fix(commit): 🐛 generate specific commit messages"
-                }
+                "message": {"content": "fix(commit): generate specific commit messages"}
             }
 
     monkeypatch.setattr(commit_workflow, "_load_ollama", lambda: FakeOllama)
@@ -401,12 +400,11 @@ def test_suggest_commit_message_returns_valid_ollama_response(monkeypatch):
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified", diff="+changed")],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
 
     message = suggest_commit_message(group)
 
-    assert message == "fix(commit): 🐛 generate specific commit messages"
+    assert message == "fix(commit): generate specific commit messages"
     assert calls
     assert calls[0][0] == "llama3.1:8b"
     assert calls[0][2] == {"temperature": 0}
@@ -418,7 +416,7 @@ def test_suggest_commit_message_returns_valid_ollama_typed_response(monkeypatch)
         def chat(model, messages, options):
             return SimpleNamespace(
                 message=SimpleNamespace(
-                    content="fix(commit): 🐛 generate specific commit messages"
+                    content="fix(commit): generate specific commit messages"
                 )
             )
 
@@ -427,12 +425,11 @@ def test_suggest_commit_message_returns_valid_ollama_typed_response(monkeypatch)
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified", diff="+changed")],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
 
     message = suggest_commit_message(group)
 
-    assert message == "fix(commit): 🐛 generate specific commit messages"
+    assert message == "fix(commit): generate specific commit messages"
 
 
 def test_suggest_commit_message_returns_none_when_ollama_unavailable(monkeypatch):
@@ -441,7 +438,6 @@ def test_suggest_commit_message_returns_none_when_ollama_unavailable(monkeypatch
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified", diff="+changed")],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
 
     assert suggest_commit_message(group) is None
@@ -480,7 +476,6 @@ def test_suggest_commit_message_returns_none_on_ollama_error(monkeypatch):
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified", diff="+changed")],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
 
     assert suggest_commit_message(group) is None
@@ -501,30 +496,74 @@ def test_suggest_commit_message_returns_none_for_malformed_ollama_response(
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified", diff="+changed")],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
 
     assert suggest_commit_message(group) is None
     assert suggest_commit_message(group) is None
     assert suggest_commit_message(group) is None
+
+
+def test_suggest_commit_message_reports_validation_reason(monkeypatch):
+    class FakeOllama:
+        @staticmethod
+        def chat(model, messages, options):
+            return {"message": {"content": "fix(commit): update commit workflow"}}
+
+    monkeypatch.setattr(commit_workflow, "_load_ollama", lambda: FakeOllama)
+    group = CommitGroup(
+        files=[ChangedFile("tests/test_commit_workflow.py", "modified", diff="+test")],
+        commit_type="test",
+        scope="tests",
+    )
+
+    assert suggest_commit_message(group) is None
+    assert "expected type 'test'" in commit_workflow._last_ollama_error
+
+
+def test_suggest_commit_message_repairs_invalid_ollama_suggestion(monkeypatch):
+    calls = []
+    responses = [
+        {"message": {"content": "fix(commit): update commit workflow"}},
+        {"message": {"content": "test(tests): update commit workflow tests"}},
+    ]
+
+    class FakeOllama:
+        @staticmethod
+        def chat(model, messages, options):
+            calls.append(messages)
+            return responses.pop(0)
+
+    monkeypatch.setattr(commit_workflow, "_load_ollama", lambda: FakeOllama)
+    group = CommitGroup(
+        files=[ChangedFile("tests/test_commit_workflow.py", "modified", diff="+test")],
+        commit_type="test",
+        scope="tests",
+    )
+
+    message = suggest_commit_message(group)
+
+    assert message == "test(tests): update commit workflow tests"
+    assert len(calls) == 2
+    retry_prompt = calls[1][-1]["content"]
+    assert "expected type 'test'" in retry_prompt
+    assert "fix(commit): update commit workflow" in retry_prompt
 
 
 def test_build_review_message_uses_ollama_suggestion(monkeypatch):
     monkeypatch.setattr(
         commit_workflow,
         "suggest_commit_message",
-        lambda group: "fix(commit): 🐛 generate specific commit messages",
+        lambda group: "fix(commit): generate specific commit messages",
     )
     group = CommitGroup(
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
 
     message = _build_review_message(group)
 
-    assert message == "fix(commit): 🐛 generate specific commit messages"
+    assert message == "fix(commit): generate specific commit messages"
 
 
 def test_build_review_message_falls_back_when_ollama_returns_none(monkeypatch):
@@ -537,12 +576,11 @@ def test_build_review_message_falls_back_when_ollama_returns_none(monkeypatch):
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
 
     message = _build_review_message(group)
 
-    assert message == "fix(commit): 🐛 update commit"
+    assert message == "fix(commit): update commit"
 
 
 def test_build_review_message_reports_ollama_connection_failure(monkeypatch):
@@ -561,7 +599,6 @@ def test_build_review_message_reports_ollama_connection_failure(monkeypatch):
         files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
         commit_type="fix",
         scope="commit",
-        emoji="🐛",
     )
     output = StringIO()
     console = commit_workflow.Console(
@@ -570,7 +607,7 @@ def test_build_review_message_reports_ollama_connection_failure(monkeypatch):
 
     message = _build_review_message(group, console)
 
-    assert message == "fix(commit): 🐛 update commit"
+    assert message == "fix(commit): update commit"
     rendered = " ".join(output.getvalue().split())
     assert "Failed to connect to Ollama." in rendered
 
@@ -589,7 +626,7 @@ def test_commit_group_stages_selected_files_and_commits(monkeypatch):
     monkeypatch.setattr(commit_workflow.subprocess, "run", fake_run)
     group = CommitGroup(
         files=[ChangedFile("mnemo8/chat.py", "modified")],
-        message="fix(chat): 🐛 update chat",
+        message="fix(chat): update chat",
     )
 
     sha, output = commit_group(group, "/repo")
@@ -597,7 +634,7 @@ def test_commit_group_stages_selected_files_and_commits(monkeypatch):
     assert sha == "abc123"
     assert "[main abc123] ok" in output
     assert calls[0] == ["git", "add", "-A", "--", "mnemo8/chat.py"]
-    assert calls[1] == ["git", "commit", "-m", "fix(chat): 🐛 update chat"]
+    assert calls[1] == ["git", "commit", "-m", "fix(chat): update chat"]
 
 
 def test_commit_group_retries_hook_failure_with_same_group_only(monkeypatch):
@@ -619,7 +656,7 @@ def test_commit_group_retries_hook_failure_with_same_group_only(monkeypatch):
     monkeypatch.setattr(commit_workflow.subprocess, "run", fake_run)
     group = CommitGroup(
         files=[ChangedFile("mnemo8/chat.py", "modified")],
-        message="fix(chat): 🐛 update chat",
+        message="fix(chat): update chat",
     )
 
     sha, output = commit_group(group, "/repo")
@@ -628,9 +665,9 @@ def test_commit_group_retries_hook_failure_with_same_group_only(monkeypatch):
     assert "hook failed" in output
     assert calls == [
         ["git", "add", "-A", "--", "mnemo8/chat.py"],
-        ["git", "commit", "-m", "fix(chat): 🐛 update chat"],
+        ["git", "commit", "-m", "fix(chat): update chat"],
         ["git", "add", "-A", "--", "mnemo8/chat.py"],
-        ["git", "commit", "-m", "fix(chat): 🐛 update chat"],
+        ["git", "commit", "-m", "fix(chat): update chat"],
         ["git", "rev-parse", "--short", "HEAD"],
     ]
 
@@ -647,7 +684,7 @@ def test_commit_group_returns_git_add_error_without_traceback(monkeypatch):
     monkeypatch.setattr(commit_workflow.subprocess, "run", fake_run)
     group = CommitGroup(
         files=[ChangedFile("missing.py", "deleted")],
-        message="refactor: ♻️ remove missing",
+        message="refactor: remove missing",
     )
 
     sha, output = commit_group(group, "/repo")
@@ -678,7 +715,7 @@ def test_commit_group_does_not_restage_already_staged_deletion(monkeypatch):
                 worktree_status=" ",
             )
         ],
-        message="refactor(static): ♻️ refactor static",
+        message="refactor(static): refactor static",
     )
 
     sha, output = commit_group(group, "/repo")
@@ -686,6 +723,6 @@ def test_commit_group_does_not_restage_already_staged_deletion(monkeypatch):
     assert sha == "abc123"
     assert "[main abc123] ok" in output
     assert calls == [
-        ["git", "commit", "-m", "refactor(static): ♻️ refactor static"],
+        ["git", "commit", "-m", "refactor(static): refactor static"],
         ["git", "rev-parse", "--short", "HEAD"],
     ]
