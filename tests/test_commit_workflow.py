@@ -18,6 +18,7 @@ MAX_PROMPT_DIFF_LINES = commit_workflow.MAX_PROMPT_DIFF_LINES
 ChangedFile = commit_workflow.ChangedFile
 CommitGroup = commit_workflow.CommitGroup
 _build_review_message = commit_workflow._build_review_message
+_review_group = commit_workflow._review_group
 amend_qualifies = commit_workflow.amend_qualifies
 build_commit_message = commit_workflow.build_commit_message
 build_commit_message_prompt = commit_workflow.build_commit_message_prompt
@@ -610,6 +611,46 @@ def test_build_review_message_reports_ollama_connection_failure(monkeypatch):
     assert message == "fix(commit): update commit"
     rendered = " ".join(output.getvalue().split())
     assert "Failed to connect to Ollama." in rendered
+
+
+def test_review_group_retries_commit_message_suggestion(monkeypatch):
+    messages = [
+        "fix(commit): update commit workflow",
+        "fix(commit): add retry option",
+    ]
+    answers = ["retry", "y"]
+    calls = []
+
+    def fake_build_review_message(group, console):
+        calls.append(group)
+        return messages.pop(0)
+
+    def fake_prompt_ask(*args, **kwargs):
+        assert "retry" in kwargs["choices"]
+        assert "r" in kwargs["choices"]
+        return answers.pop(0)
+
+    monkeypatch.setattr(
+        commit_workflow,
+        "_build_review_message",
+        fake_build_review_message,
+    )
+    monkeypatch.setattr(commit_workflow.Prompt, "ask", fake_prompt_ask)
+    group = CommitGroup(
+        files=[ChangedFile("mnemo8/commit_workflow.py", "modified")],
+        commit_type="fix",
+        scope="commit",
+    )
+    output = StringIO()
+    console = commit_workflow.Console(
+        file=output, force_terminal=False, color_system=None
+    )
+
+    accepted = _review_group(group, 1, 1, console)
+
+    assert accepted is True
+    assert group.message == "fix(commit): add retry option"
+    assert len(calls) == 2
 
 
 def test_commit_group_stages_selected_files_and_commits(monkeypatch):
