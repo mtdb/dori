@@ -13,7 +13,7 @@ Skills teach the model when to emit structured JSON. Scripts execute that JSON.
 
 ## Runtime
 
-`dori init` creates `~/.dori`, copies the bundled boilerplate, and installs a reminders preset selected during setup:
+`dori init` creates `~/.dori`, copies the bundled boilerplate, and installs reminders and search presets selected during setup:
 
 ```text
 ~/.dori/
@@ -26,8 +26,13 @@ Skills teach the model when to emit structured JSON. Scripts execute that JSON.
 
 Reminder files are installed from `boilerplate/presets/reminders/`. The D-Bus preset uses `notify-send` for Linux desktop notifications. The template preset preserves the deterministic editable script for users who want to wire reminders to their own backend.
 
-The source template is in `boilerplate/`, with default `DORI.md`, grouped
-skills such as `search/` and `devtools/`, and matching Python scripts. At
+Web search files are installed from `boilerplate/presets/search/`. `ddgs` is
+the default backend and works without an API key. `tavily` requires
+`TAVILY_API_KEY` and uses Tavily's native answer generation. Both install as
+the same top-level `web` skill and script, so runtime routing stays stable.
+
+The source template is in `boilerplate/`, with default `DORI.md`, top-level
+skills, grouped skills such as `devtools/`, and matching Python scripts. At
 runtime, Dori always loads the active configuration from `~/.dori`, so users can
 customize their local agent, skills, and scripts without editing the installed
 package. The Textual TUI also stores the last 100 submitted messages in
@@ -87,15 +92,15 @@ override it with `DORI_SKILL_CONFIDENCE_THRESHOLD`.
 - Leaf skills are Markdown files except `_index.md`.
 - Router skills are directories with child skills.
 
-A leaf file such as `skills/search/web.md` becomes:
+A leaf file such as `skills/web.md` becomes:
 
 ```python
-Skill(name="web", path="search/web.md", content="<markdown content>")
+Skill(name="web", path="web.md", content="<markdown content>")
 ```
 
-A router uses its `_index.md` content when present, or a generated fallback
-description. For example, `skills/search/_index.md` creates a `search` router,
-while `web.md` and `news.md` become leaf skills.
+Routers still work for grouped skills such as `devtools/`, but the bundled web
+search capability is now a top-level leaf skill installed from the selected
+preset.
 
 ## Turn lifecycle
 
@@ -107,15 +112,16 @@ validates and normalizes the payload with Pydantic, runs the matching script,
 and returns `ChatResponse(raw_content, display_text, resolved_skill,
 skill_output)`.
 
-A successful skill response is displayed as:
+A successful web skill response is displayed as a grounded answer, for example:
 
 ```text
 [ok] web
-[Web Search]: Searching the web for 'Python'...
-```
+Python 3.14.0 was released on October 7, 2025.
 
-Low-confidence JSON, invalid JSON, and invalid payloads do not run scripts.
-Dori answers normally or asks for the missing field.
+Sources:
+- https://www.python.org/...
+- https://docs.python.org/...
+```
 
 ## Payload parsing
 
@@ -129,30 +135,15 @@ The payload must include `skill` and valid `confidence`. Legacy standalone JSON
 without `confidence` is accepted as confidence `1.0`. When no skill runs,
 `strip_skill_payload()` removes JSON blocks from the visible answer.
 
-## Routers
-
-Routers organize related skills. For example, `search` can route to `web` or
-`news`.
-
-If the model selects:
-
-```json
-{"skill": "search", "confidence": 0.91, "raw_text": "look up Madrid weather"}
-```
-
-Dori does not run `scripts/search.py`. It asks the model to choose one child,
-extracts the final payload for that leaf skill, validates it, and runs
-`scripts/<leaf>.py`.
-
 ## Validation
 
 Before execution, `validate_skill_payload()` validates the JSON with Pydantic.
 Every payload requires `skill`, `confidence`, and `raw_text`.
 
 Skill-specific fields: `reminders` needs `message` and `when`; `calendar`
-needs `title` and `when`, with optional `duration` and `location`; `web` and
-`news` need `query`; `news` also accepts `since`; `git` needs `topic` and
-accepts `context`; `docker` needs `question`.
+needs `title` and `when`, with optional `duration` and `location`; `web` needs
+`query` and accepts `freshness`; `git` needs `topic` and accepts `context`;
+`docker` needs `question`.
 
 Extra fields are allowed so users can extend scripts. If a required field is
 missing, Dori asks for it and does not execute the script.
@@ -184,7 +175,7 @@ That is useful for skills that are naturally command-shaped, such as `commit`.
 The link between a skill and a script is the leaf skill name:
 
 ```text
-skills/search/web.md   -> scripts/web.py
+skills/web.md          -> scripts/web.py
 skills/calendar.md     -> scripts/calendar.py
 skills/devtools/git.md -> scripts/git.py
 ```
@@ -213,10 +204,14 @@ dori --prompt "Summarize my open tasks"
 dori init
 DORI_DEBUG=1
 DORI_SKILL_CONFIDENCE_THRESHOLD=0.7
+TAVILY_API_KEY=tvly-...
+DORI_WEB_MODEL=llama3.1:8b
 ```
 
 `DORI_DEBUG` shows raw debugging content. The threshold variable controls the
 minimum accepted skill confidence and is clamped to `0.0` to `1.0`.
+`TAVILY_API_KEY` enables the Tavily preset. `DORI_WEB_MODEL` overrides the
+local Ollama model used by the DDGS preset.
 
 ## Extending Dori
 

@@ -340,6 +340,22 @@ def test_reminders_dbus_preset_requires_notify_send(monkeypatch, capsys) -> None
     assert "Error: D-Bus reminders require notify-send to be installed." in captured.err
 
 
+def test_docs_describe_top_level_web_search_presets() -> None:
+    readme = (ROOT / "README.md").read_text(encoding="utf-8")
+    how_it_works = (ROOT / "docs" / "how-it-works.md").read_text(encoding="utf-8")
+    skill_guide = (ROOT / "docs" / "how-to-create-boilerplate-skills.md").read_text(
+        encoding="utf-8"
+    )
+    combined = "\n".join([readme, how_it_works, skill_guide])
+
+    assert "Choose search backend" in combined
+    assert "TAVILY_API_KEY" in combined
+    assert "DORI_WEB_MODEL" in combined
+    assert "DDGS" in combined
+    assert "skills/search/news.md" not in combined
+    assert "**Experts available**: web, news" not in combined
+
+
 def test_analyze_folder_script_summarizes_project_metadata(tmp_path: Path) -> None:
     project = tmp_path / "sample-app"
     project.mkdir()

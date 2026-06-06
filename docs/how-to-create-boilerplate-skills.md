@@ -164,21 +164,25 @@ if __name__ == "__main__":
 
 When several related skills share a common trigger (e.g. different types of search), group them under a subdirectory with an `_index.md` router.
 
-### `skills/search/_index.md` — Router
+### `skills/media/_index.md` — Router
 
 ```markdown
-# Search Router
+# Media Router
 
-**Intent**: Use when the user wants to search, look something up, or find information online.
+**Intent**: Use when the user wants help with media-related tasks.
 
-**Experts available**: web, news
+**Experts available**: images, videos
 ```
 
 The router lists the sub-skill names. The LLM picks the best match and loads the corresponding sub-skill file from the same directory.
 
 ### Sub-skill files
 
-Each sub-skill (e.g. `skills/search/news.md`) follows the same structure as a top-level skill file. The `"skill"` key in the JSON payload should match the sub-skill name (`"news"`, `"web"`, etc.), and the corresponding script lives at `scripts/news.py`, `scripts/web.py`, etc.
+Each sub-skill (e.g. `skills/media/images.md`) follows the same structure as a top-level skill file. The `"skill"` key in the JSON payload should match the sub-skill name (`"images"`, `"videos"`, etc.), and the corresponding script lives at `scripts/images.py`, `scripts/videos.py`, etc.
+
+The bundled web search capability is intentionally not modeled as a grouped
+router. Dori installs one top-level `web` skill from `boilerplate/presets/search/`
+so different providers can share the same runtime name and payload contract.
 
 ---
 

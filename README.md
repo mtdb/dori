@@ -75,13 +75,29 @@ Dori stores its runtime state in `~/.dori`:
 └── scripts/
 ```
 
-`dori init` copies the boilerplate `DORI.md`, `skills/`, and `scripts/` into that directory. During first-time setup, it asks which reminders backend to install: D-Bus desktop notifications or the editable template script.
+`dori init` copies the boilerplate `DORI.md`, `skills/`, and `scripts/` into that directory. During first-time setup, it asks `Choose reminders backend` and `Choose search backend`. Search defaults to DDGS for zero-key web answers, while Tavily uses its own API-backed answer generation.
 It also records md5 hashes for managed files in `.manifest.json`. `dori update`
 uses that manifest to refresh files that still match their last installed hash,
 while skipping files with local user modifications and printing an informative
 message for each skipped file.
 The TUI stores the last 100 submitted messages in `.history` so new sessions can
 recall previous prompts with ↑/↓.
+
+For Tavily-backed search, export:
+
+```bash
+export TAVILY_API_KEY="tvly-..."
+```
+
+For DDGS-backed search, Dori uses local Ollama to synthesize an English answer
+from retrieved evidence. Override that model with:
+
+```bash
+export DORI_WEB_MODEL="llama3.1:8b"
+```
+
+Both search backends return a direct answer followed by `Sources:` and two or
+three URLs.
 
 ## How it works
 
