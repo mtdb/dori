@@ -2,19 +2,18 @@ import json
 import sys
 
 
-def main():
+def main() -> None:
     if len(sys.argv) < 2:
         print("Error: Missing JSON payload", file=sys.stderr)
         sys.exit(1)
 
     try:
-        payload = json.loads(sys.argv[1])
-        query = payload.get("query", "unknown query")
-
-        print(f"🔍 [Web Search]: Searching the web for '{query}'...")
+        json.loads(sys.argv[1])
     except json.JSONDecodeError:
         print("Error: Invalid JSON payload provided to web script.", file=sys.stderr)
         sys.exit(1)
+
+    print("[Web]: Tavily provider placeholder")
 
 
 if __name__ == "__main__":

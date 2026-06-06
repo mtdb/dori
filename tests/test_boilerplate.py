@@ -5,6 +5,8 @@ import sys
 from pathlib import Path
 from types import ModuleType
 
+from dori.schemas import validate_skill_payload
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -18,22 +20,62 @@ def load_reminders_dbus_module() -> ModuleType:
     return module
 
 
-def test_search_boilerplate_only_includes_web_and_news() -> None:
-    skills_dir = ROOT / "boilerplate" / "skills" / "search"
-    scripts_dir = ROOT / "boilerplate" / "scripts"
+def test_search_boilerplate_uses_provider_presets() -> None:
+    presets_dir = ROOT / "boilerplate" / "presets" / "search"
 
-    assert sorted(path.stem for path in skills_dir.glob("*.md")) == [
-        "_index",
-        "news",
-        "web",
+    assert sorted(path.name for path in presets_dir.iterdir() if path.is_file()) == [
+        "ddgs.md",
+        "ddgs.py",
+        "tavily.md",
+        "tavily.py",
     ]
-    assert "**Experts available**: web, news" in (skills_dir / "_index.md").read_text(
-        encoding="utf-8"
-    )
+    assert not (ROOT / "boilerplate" / "skills" / "search").exists()
+    assert not (ROOT / "boilerplate" / "scripts" / "web.py").exists()
+    assert not (ROOT / "boilerplate" / "scripts" / "news.py").exists()
 
-    for removed_skill in ("images", "maps", "code"):
-        assert not (skills_dir / f"{removed_skill}.md").exists()
-        assert not (scripts_dir / f"{removed_skill}.py").exists()
+
+def test_web_payload_accepts_supported_freshness() -> None:
+    payload = {
+        "skill": "web",
+        "confidence": 0.95,
+        "query": "Nintendo Switch 2 release date",
+        "freshness": "month",
+        "raw_text": "When was the Nintendo Switch 2 released?",
+    }
+
+    normalized, error = validate_skill_payload(payload)
+
+    assert error is None
+    assert normalized is not None
+    assert normalized["freshness"] == "month"
+
+
+def test_web_payload_rejects_unsupported_freshness() -> None:
+    payload = {
+        "skill": "web",
+        "confidence": 0.95,
+        "query": "Spain population",
+        "freshness": "hour",
+        "raw_text": "What is Spain's population right now?",
+    }
+
+    normalized, error = validate_skill_payload(payload)
+
+    assert normalized is None
+    assert error == "I need you to rephrase or restate: freshness."
+
+
+def test_news_payload_is_no_longer_registered() -> None:
+    payload = {
+        "skill": "news",
+        "confidence": 0.95,
+        "raw_text": "latest console news",
+    }
+
+    normalized, error = validate_skill_payload(payload)
+
+    assert error is None
+    assert normalized == payload
 
 
 def test_git_skill_is_read_only_expert_skill() -> None:
@@ -78,6 +120,7 @@ def test_boilerplate_skill_examples_include_confidence_and_raw_text() -> None:
         for skill_dir in [
             ROOT / "boilerplate" / "skills",
             ROOT / "boilerplate" / "presets" / "reminders",
+            ROOT / "boilerplate" / "presets" / "search",
         ]
         for path in skill_dir.rglob("*.md")
         if path.name != "_index.md"
@@ -107,8 +150,6 @@ def test_non_expert_boilerplate_scripts_write_errors_to_stderr() -> None:
         "analyze-folder.py",
         "calendar.py",
         "docker.py",
-        "news.py",
-        "web.py",
     ]
 
     for script_name in script_names:

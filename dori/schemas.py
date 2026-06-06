@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
@@ -34,11 +34,7 @@ class CalendarPayload(SkillPayload):
 
 class WebPayload(SkillPayload):
     query: str = Field(min_length=1)
-
-
-class NewsPayload(SkillPayload):
-    query: str = Field(min_length=1)
-    since: str | None = None
+    freshness: Literal["day", "week", "month", "year"] | None = None
 
 
 class GitPayload(SkillPayload):
@@ -73,7 +69,6 @@ _SCHEMAS: dict[str, type[SkillPayload]] = {
     "reminders": RemindersPayload,
     "calendar": CalendarPayload,
     "web": WebPayload,
-    "news": NewsPayload,
     "git": GitPayload,
     "docker": DockerPayload,
     "commit": CommitPayload,
