@@ -1,5 +1,6 @@
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 from dori.commands import (
@@ -10,6 +11,24 @@ from dori.commands import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
+LEGACY_SOURCE_COMMIT = "1346dda"
+LEGACY_SEARCH_PATHS = [
+    "skills/search/_index.md",
+    "skills/search/web.md",
+    "skills/search/news.md",
+    "scripts/news.py",
+]
+
+
+def git_show_legacy_file(relative: Path) -> str:
+    result = subprocess.run(
+        ["git", "show", f"{LEGACY_SOURCE_COMMIT}:{relative.as_posix()}"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    return result.stdout
 
 
 def test_choose_reminders_backend_uses_prompt_default_path():
@@ -314,7 +333,129 @@ def test_init_workspace_installs_ddgs_script_for_partial_existing_search_pair(
     ).read_text(encoding="utf-8")
     assert existing_skill.read_text(encoding="utf-8") == "# Custom web skill\n"
 
+
+def test_update_workspace_keeps_installed_search_backend(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    init_workspace(str(ROOT), reminders_backend="template", search_backend="tavily")
+
+    update_workspace(str(ROOT))
+
+    runtime_web = tmp_path / ".dori" / "scripts" / "web.py"
+    assert runtime_web.read_text(encoding="utf-8") == (
+        ROOT / "boilerplate" / "presets" / "search" / "tavily.py"
+    ).read_text(encoding="utf-8")
+
+
+def test_update_workspace_switches_unmodified_search_backend(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    init_workspace(str(ROOT), reminders_backend="template", search_backend="ddgs")
+
+    update_workspace(str(ROOT), search_backend="tavily")
+
+    runtime_web = tmp_path / ".dori" / "scripts" / "web.py"
+    assert runtime_web.read_text(encoding="utf-8") == (
+        ROOT / "boilerplate" / "presets" / "search" / "tavily.py"
+    ).read_text(encoding="utf-8")
+    assert (tmp_path / ".dori" / "skills" / "web.md").read_text(encoding="utf-8") == (
+        ROOT / "boilerplate" / "presets" / "search" / "tavily.md"
+    ).read_text(encoding="utf-8")
+
+
+def test_update_does_not_partially_switch_modified_search_pair(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    init_workspace(str(ROOT), reminders_backend="template", search_backend="ddgs")
+    runtime_home = tmp_path / ".dori"
+    web_skill = runtime_home / "skills" / "web.md"
+    original_script = (runtime_home / "scripts" / "web.py").read_text(encoding="utf-8")
+    original_skill = web_skill.read_text(encoding="utf-8")
+    web_skill.write_text(f"{original_skill}\ncustom instructions\n", encoding="utf-8")
+
+    update_workspace(str(ROOT), search_backend="tavily")
+
+    assert (runtime_home / "scripts" / "web.py").read_text(encoding="utf-8") == (
+        original_script
+    )
+    assert web_skill.read_text(encoding="utf-8") == (
+        f"{original_skill}\ncustom instructions\n"
+    )
+    assert "search backend not switched" in capsys.readouterr().out
+
+
+def test_update_removes_unmodified_managed_legacy_search_files(
+    tmp_path, monkeypatch
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runtime_home = tmp_path / ".dori"
+    (runtime_home / "skills" / "search").mkdir(parents=True)
+    (runtime_home / "scripts").mkdir(parents=True)
+    manifest = {}
+    legacy_sources = {
+        "skills/search/_index.md": Path("boilerplate/skills/search/_index.md"),
+        "skills/search/web.md": Path("boilerplate/skills/search/web.md"),
+        "skills/search/news.md": Path("boilerplate/skills/search/news.md"),
+        "scripts/news.py": Path("boilerplate/scripts/news.py"),
+        "scripts/web.py": Path("boilerplate/scripts/web.py"),
+    }
+    for relative, source in legacy_sources.items():
+        destination = runtime_home / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        content = git_show_legacy_file(source)
+        destination.write_text(content, encoding="utf-8")
+        manifest[relative] = hashlib.md5(content.encode("utf-8")).hexdigest()  # noqa: S324
+    (runtime_home / ".manifest.json").write_text(
+        json.dumps(manifest, indent=2, sort_keys=True),
+        encoding="utf-8",
+    )
+
+    update_workspace(str(ROOT), search_backend="ddgs")
+
+    for relative in LEGACY_SEARCH_PATHS:
+        assert not (runtime_home / relative).exists()
+    assert (runtime_home / "scripts" / "web.py").read_text(encoding="utf-8") == (
+        ROOT / "boilerplate" / "presets" / "search" / "ddgs.py"
+    ).read_text(encoding="utf-8")
+    assert (runtime_home / "skills" / "web.md").read_text(encoding="utf-8") == (
+        ROOT / "boilerplate" / "presets" / "search" / "ddgs.md"
+    ).read_text(encoding="utf-8")
+
+
+def test_update_preserves_modified_legacy_search_file(
+    tmp_path, monkeypatch, capsys
+) -> None:
+    monkeypatch.setenv("HOME", str(tmp_path))
+    runtime_home = tmp_path / ".dori"
+    scripts_dir = runtime_home / "scripts"
+    legacy = runtime_home / "skills" / "search" / "news.md"
+    legacy.parent.mkdir(parents=True, exist_ok=True)
+    legacy.write_text("# custom news skill\n", encoding="utf-8")
+    (runtime_home / ".manifest.json").write_text(
+        json.dumps(
+            {
+                "skills/search/news.md": hashlib.md5(
+                    b"old packaged content\n"
+                ).hexdigest()
+            },
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+
+    update_workspace(str(ROOT), search_backend="ddgs")
+
+    assert legacy.read_text(encoding="utf-8") == "# custom news skill\n"
+    assert "local modifications" in capsys.readouterr().out
+
     assert (scripts_dir / "reminders.py").read_text(encoding="utf-8") == (
         ROOT / "boilerplate" / "presets" / "reminders" / "template.py"
     ).read_text(encoding="utf-8")
-    assert existing_skill.read_text(encoding="utf-8") == "# Custom web skill\n"
+    assert (runtime_home / "scripts" / "web.py").read_text(encoding="utf-8") == (
+        ROOT / "boilerplate" / "presets" / "search" / "ddgs.py"
+    ).read_text(encoding="utf-8")
+    assert (runtime_home / "skills" / "web.md").read_text(encoding="utf-8") == (
+        ROOT / "boilerplate" / "presets" / "search" / "ddgs.md"
+    ).read_text(encoding="utf-8")

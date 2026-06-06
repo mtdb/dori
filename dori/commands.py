@@ -17,6 +17,12 @@ REMINDERS_SKILL = Path("skills/reminders.md")
 SEARCH_BACKENDS = {"ddgs", "tavily"}
 SEARCH_SCRIPT = Path("scripts/web.py")
 SEARCH_SKILL = Path("skills/web.md")
+LEGACY_SEARCH_PATHS = {
+    Path("skills/search/_index.md"),
+    Path("skills/search/web.md"),
+    Path("skills/search/news.md"),
+    Path("scripts/news.py"),
+}
 MANIFEST_PATH = Path(".manifest.json")
 PERSONA_FILENAME = "DORI.md"
 LEGACY_PERSONA_FILENAME = "AGENTS.md"
@@ -248,8 +254,74 @@ def _detect_existing_reminders_backend(
     return None
 
 
+def _read_search_backend_marker(script_path: Path) -> str | None:
+    if not script_path.is_file():
+        return None
+
+    for line in script_path.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("SEARCH_BACKEND = "):
+            continue
+        marker = line.partition("=")[2].strip().strip("\"'")
+        if marker in SEARCH_BACKENDS:
+            return marker
+    return None
+
+
+def _detect_existing_search_backend(
+    boilerplate_dir: Path, runtime_home: Path, manifest: dict[str, str]
+) -> str | None:
+    preset_dir = boilerplate_dir / "presets" / "search"
+    script_dest = runtime_home / SEARCH_SCRIPT
+    skill_dest = runtime_home / SEARCH_SKILL
+
+    for backend in sorted(SEARCH_BACKENDS):
+        script_src = preset_dir / f"{backend}.py"
+        skill_src = preset_dir / f"{backend}.md"
+        if (
+            script_dest.is_file()
+            and skill_dest.is_file()
+            and script_src.is_file()
+            and skill_src.is_file()
+            and _compute_md5(script_dest) == _compute_md5(script_src)
+            and _compute_md5(skill_dest) == _compute_md5(skill_src)
+        ):
+            return backend
+
+    relative = SEARCH_SCRIPT.as_posix()
+    recorded_md5 = manifest.get(relative)
+    if (
+        recorded_md5 is not None
+        and script_dest.is_file()
+        and _compute_md5(script_dest) == recorded_md5
+    ):
+        return _read_search_backend_marker(script_dest)
+    return None
+
+
+def _search_pair_is_managed_and_unmodified(
+    runtime_home: Path, manifest: dict[str, str]
+) -> bool:
+    for relative_path in (SEARCH_SCRIPT, SEARCH_SKILL):
+        relative = relative_path.as_posix()
+        destination = runtime_home / relative_path
+        recorded_md5 = manifest.get(relative)
+        if (
+            not destination.is_file()
+            or recorded_md5 is None
+            or _compute_md5(destination) != recorded_md5
+        ):
+            return False
+    return True
+
+
 def _iter_managed_files(
-    boilerplate_dir: Path, runtime_home: Path, reminders_backend: str | None = None
+    boilerplate_dir: Path,
+    runtime_home: Path,
+    reminders_backend: str | None = None,
+    search_backend: str | None = None,
+    *,
+    include_search: bool = True,
+    manifest: dict[str, str] | None = None,
 ) -> list[tuple[Path, Path]]:
     managed_files: list[tuple[Path, Path]] = []
 
@@ -293,10 +365,60 @@ def _iter_managed_files(
     managed_files.append(
         (preset_dir / f"{resolved_backend}.md", runtime_home / REMINDERS_SKILL)
     )
-    search_preset_dir = boilerplate_dir / "presets" / "search"
-    managed_files.append((search_preset_dir / "ddgs.py", runtime_home / SEARCH_SCRIPT))
-    managed_files.append((search_preset_dir / "ddgs.md", runtime_home / SEARCH_SKILL))
+    if include_search:
+        resolved_search_backend = search_backend
+        if resolved_search_backend is None:
+            resolved_search_backend = _detect_existing_search_backend(
+                boilerplate_dir, runtime_home, manifest or {}
+            )
+        if resolved_search_backend is None:
+            resolved_search_backend = "ddgs"
+        search_preset_dir = boilerplate_dir / "presets" / "search"
+        managed_files.append(
+            (
+                search_preset_dir / f"{resolved_search_backend}.py",
+                runtime_home / SEARCH_SCRIPT,
+            )
+        )
+        managed_files.append(
+            (
+                search_preset_dir / f"{resolved_search_backend}.md",
+                runtime_home / SEARCH_SKILL,
+            )
+        )
     return managed_files
+
+
+def _remove_managed_legacy_search_files(
+    runtime_home: Path, manifest: dict[str, str]
+) -> None:
+    legacy_install = any(path.as_posix() in manifest for path in LEGACY_SEARCH_PATHS)
+    paths = set(LEGACY_SEARCH_PATHS)
+    if legacy_install and SEARCH_SKILL.as_posix() not in manifest:
+        paths.add(SEARCH_SCRIPT)
+
+    for relative_path in sorted(paths):
+        relative = relative_path.as_posix()
+        destination = runtime_home / relative_path
+        if not destination.exists():
+            manifest.pop(relative, None)
+            continue
+
+        recorded_md5 = manifest.get(relative)
+        if recorded_md5 is None or _compute_md5(destination) != recorded_md5:
+            console.print(
+                f"[yellow]Skipped[/yellow] {relative} "
+                "(not removed because it has local modifications)"
+            )
+            continue
+
+        destination.unlink()
+        manifest.pop(relative, None)
+        console.print(f"[green]Removed[/green] {relative}")
+
+    search_dir = runtime_home / "skills" / "search"
+    if search_dir.is_dir() and not any(search_dir.iterdir()):
+        search_dir.rmdir()
 
 
 def init_workspace(
@@ -441,9 +563,14 @@ def init_workspace(
     console.print("\n[bold cyan]Dori ~/.dori initialized successfully![/bold cyan]")
 
 
-def update_workspace(cwd: str, reminders_backend: str | None = None) -> None:
+def update_workspace(
+    cwd: str,
+    reminders_backend: str | None = None,
+    search_backend: str | None = None,
+) -> None:
     """Update managed files in ~/.dori without overwriting user-modified files."""
     reminders_backend = _normalize_reminders_backend(reminders_backend)
+    search_backend = _normalize_search_backend(search_backend)
     _, boilerplate_dir, used_fallback = _resolve_boilerplate_dir(cwd)
     runtime_home = get_runtime_home()
 
@@ -457,9 +584,35 @@ def update_workspace(cwd: str, reminders_backend: str | None = None) -> None:
 
     manifest = _load_manifest(runtime_home)
     migrate_legacy_persona_file(runtime_home, manifest)
+    detected_search_backend = _detect_existing_search_backend(
+        boilerplate_dir, runtime_home, manifest
+    )
+    resolved_search_backend = search_backend or detected_search_backend or "ddgs"
+    search_pair_exists = any(
+        (runtime_home / path).exists() for path in (SEARCH_SCRIPT, SEARCH_SKILL)
+    )
+    skip_search_update = False
+    if (
+        search_backend is not None
+        and detected_search_backend is not None
+        and search_pair_exists
+        and not _search_pair_is_managed_and_unmodified(runtime_home, manifest)
+    ):
+        console.print(
+            "[yellow]Skipped[/yellow] search backend not switched "
+            "(web skill or script has local modifications)"
+        )
+        skip_search_update = True
+
+    _remove_managed_legacy_search_files(runtime_home, manifest)
 
     for src, dest in _iter_managed_files(
-        boilerplate_dir, runtime_home, reminders_backend
+        boilerplate_dir,
+        runtime_home,
+        reminders_backend,
+        resolved_search_backend,
+        include_search=not skip_search_update,
+        manifest=manifest,
     ):
         relative = _relative_runtime_path(dest, runtime_home)
         dest.parent.mkdir(parents=True, exist_ok=True)
