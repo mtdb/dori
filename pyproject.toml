@@ -13,6 +13,7 @@ dependencies = [
     "ollama>=0.2.0",
     "textual>=0.52.0",
     "pydantic>=2.0.0",
+    "ddgs (>=9.14.4,<10)",
 ]
 
 [project.scripts]
