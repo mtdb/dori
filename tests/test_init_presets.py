@@ -125,7 +125,9 @@ def test_init_workspace_installs_tavily_search_preset(tmp_path, monkeypatch) -> 
     ).read_text(encoding="utf-8")
 
 
-def test_update_workspace_replaces_unmodified_managed_file(tmp_path, monkeypatch):
+def test_update_workspace_replaces_unmodified_managed_file(
+    tmp_path, monkeypatch, capsys
+):
     monkeypatch.setenv("HOME", str(tmp_path))
     runtime_home = tmp_path / ".dori"
 
@@ -148,6 +150,17 @@ def test_update_workspace_replaces_unmodified_managed_file(tmp_path, monkeypatch
     assert target.read_text(encoding="utf-8") == original
     updated_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert updated_manifest["scripts/calendar.py"] != previous_md5
+    assert "Updated scripts/calendar.py" in capsys.readouterr().out
+
+
+def test_update_workspace_reports_unchanged_managed_file(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    init_workspace(str(ROOT), reminders_backend="template", search_backend="ddgs")
+
+    update_workspace(str(ROOT))
+
+    assert "Unchanged scripts/calendar.py" in capsys.readouterr().out
 
 
 def test_update_workspace_preserves_user_modified_file(tmp_path, monkeypatch, capsys):
