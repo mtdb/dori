@@ -407,6 +407,8 @@ def _validate_llm_commit_message(
     if subject.lower().startswith(("here is", "commit message", "message:")):
         return None, "response includes introductory text"
 
+    subject = _normalize_llm_subject(subject, group)
+
     match = re.match(r"^(\w+)(?:\(([^)]+)\))?[!]?:\s+(.+)$", subject)
     if match is None:
         return None, "subject is not a conventional commit"
@@ -429,6 +431,23 @@ def _validate_llm_commit_message(
         return None, "subject description is too generic"
 
     return (subject if not body_text else subject + body_suffix), None
+
+
+def _normalize_llm_subject(subject: str, group: CommitGroup) -> str:
+    expected_type = group.commit_type
+    expected_scope = group.scope
+
+    if expected_type and expected_scope:
+        scoped_missing = re.match(rf"^{re.escape(expected_type)}:\s+(.+)$", subject)
+        if scoped_missing is not None:
+            return f"{expected_type}({expected_scope}): {scoped_missing.group(1)}"
+
+    if expected_type:
+        type_missing = re.match(r"^\(([^)]+)\):\s+(.+)$", subject)
+        if type_missing is not None and type_missing.group(1) == expected_scope:
+            return f"{expected_type}({type_missing.group(1)}): {type_missing.group(2)}"
+
+    return subject
 
 
 def _contains_emoji(value: str) -> bool:

@@ -22,9 +22,27 @@ class WebSearchError(RuntimeError):
     pass
 
 
+def _run_without_script_dir(callback):
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    original_path = list(sys.path)
+    try:
+        sys.path = [
+            path
+            for path in sys.path
+            if os.path.abspath(path or os.getcwd()) != script_dir
+        ]
+        return callback()
+    finally:
+        sys.path = original_path
+
+
+def _import_module_without_script_dir(module_name: str):
+    return _run_without_script_dir(lambda: importlib.import_module(module_name))
+
+
 def _load_ddgs():
     try:
-        return importlib.import_module("ddgs").DDGS
+        return _run_without_script_dir(lambda: importlib.import_module("ddgs").DDGS())
     except (ImportError, AttributeError) as error:
         raise WebSearchError(
             "DDGS search is unavailable. Reinstall Dori with its dependencies."
@@ -33,7 +51,7 @@ def _load_ddgs():
 
 def _load_ollama():
     try:
-        return importlib.import_module("ollama")
+        return _import_module_without_script_dir("ollama")
     except ImportError as error:
         raise WebSearchError(
             "Ollama is unavailable. Install Ollama support before using DDGS search."
@@ -46,7 +64,7 @@ def retrieve_evidence(query: str, freshness: str | None) -> list[dict[str, str]]
         kwargs["timelimit"] = TIMELIMITS[freshness]
 
     try:
-        raw_results = _load_ddgs()().text(query, **kwargs)
+        raw_results = _load_ddgs().text(query, **kwargs)
     except WebSearchError:
         raise
     except Exception as error:
