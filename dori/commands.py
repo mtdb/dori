@@ -14,6 +14,9 @@ console = Console()
 REMINDERS_BACKENDS = {"dbus", "template"}
 REMINDERS_SCRIPT = Path("scripts/reminders.py")
 REMINDERS_SKILL = Path("skills/reminders.md")
+SEARCH_BACKENDS = {"ddgs", "tavily"}
+SEARCH_SCRIPT = Path("scripts/web.py")
+SEARCH_SKILL = Path("skills/web.md")
 MANIFEST_PATH = Path(".manifest.json")
 PERSONA_FILENAME = "DORI.md"
 LEGACY_PERSONA_FILENAME = "AGENTS.md"
@@ -128,6 +131,32 @@ def _choose_reminders_backend(
     )
 
 
+def _normalize_search_backend(search_backend: str | None) -> str | None:
+    if search_backend is None:
+        return None
+    if search_backend not in SEARCH_BACKENDS:
+        raise ValueError(
+            f"Invalid search backend {search_backend!r}. "
+            f"Expected one of: {', '.join(sorted(SEARCH_BACKENDS))}."
+        )
+    return search_backend
+
+
+def _choose_search_backend(
+    search_backend: str | None,
+    prompt: Callable[..., str] = Prompt.ask,
+) -> str:
+    normalized_backend = _normalize_search_backend(search_backend)
+    if normalized_backend is not None:
+        return normalized_backend
+
+    return prompt(
+        "Choose search backend",
+        choices=sorted(SEARCH_BACKENDS),
+        default="ddgs",
+    )
+
+
 def _copy_reminders_preset(
     boilerplate_dir: Path,
     runtime_home: Path,
@@ -152,6 +181,42 @@ def _copy_reminders_preset(
         backend = _choose_reminders_backend(reminders_backend)
 
     preset_dir = boilerplate_dir / "presets" / "reminders"
+    script_src = preset_dir / f"{backend}.py"
+    skill_src = preset_dir / f"{backend}.md"
+
+    if not script_exists:
+        if _copy_file_if_missing(script_src, script_dest, runtime_home, repo_root):
+            copied_paths.add(_relative_runtime_path(script_dest, runtime_home))
+    if not skill_exists:
+        if _copy_file_if_missing(skill_src, skill_dest, runtime_home, repo_root):
+            copied_paths.add(_relative_runtime_path(skill_dest, runtime_home))
+    return copied_paths
+
+
+def _copy_search_preset(
+    boilerplate_dir: Path,
+    runtime_home: Path,
+    repo_root: Path,
+    search_backend: str | None,
+) -> set[str]:
+    copied_paths: set[str] = set()
+    script_dest = runtime_home / SEARCH_SCRIPT
+    skill_dest = runtime_home / SEARCH_SKILL
+    script_exists = script_dest.exists()
+    skill_exists = skill_dest.exists()
+
+    if script_exists and skill_exists:
+        console.print(
+            f"[yellow]Skipped[/yellow] {SEARCH_SCRIPT} and {SEARCH_SKILL} (already exist)"
+        )
+        return copied_paths
+
+    if script_exists or skill_exists:
+        backend = "ddgs"
+    else:
+        backend = _choose_search_backend(search_backend)
+
+    preset_dir = boilerplate_dir / "presets" / "search"
     script_src = preset_dir / f"{backend}.py"
     skill_src = preset_dir / f"{backend}.md"
 
@@ -202,7 +267,7 @@ def _iter_managed_files(
     scripts_src = boilerplate_dir / "scripts"
     if scripts_src.is_dir():
         for src in sorted(scripts_src.glob("*.py")):
-            if src.relative_to(boilerplate_dir) == REMINDERS_SCRIPT:
+            if src.relative_to(boilerplate_dir) in {REMINDERS_SCRIPT, SEARCH_SCRIPT}:
                 continue
             managed_files.append((src, runtime_home / "scripts" / src.name))
 
@@ -210,7 +275,7 @@ def _iter_managed_files(
     if skills_src.is_dir():
         for src in sorted(skills_src.rglob("*.md")):
             relative = src.relative_to(skills_src)
-            if Path("skills") / relative == REMINDERS_SKILL:
+            if Path("skills") / relative in {REMINDERS_SKILL, SEARCH_SKILL}:
                 continue
             managed_files.append((src, runtime_home / "skills" / relative))
 
@@ -228,12 +293,20 @@ def _iter_managed_files(
     managed_files.append(
         (preset_dir / f"{resolved_backend}.md", runtime_home / REMINDERS_SKILL)
     )
+    search_preset_dir = boilerplate_dir / "presets" / "search"
+    managed_files.append((search_preset_dir / "ddgs.py", runtime_home / SEARCH_SCRIPT))
+    managed_files.append((search_preset_dir / "ddgs.md", runtime_home / SEARCH_SKILL))
     return managed_files
 
 
-def init_workspace(cwd: str, reminders_backend: str | None = None):
+def init_workspace(
+    cwd: str,
+    reminders_backend: str | None = None,
+    search_backend: str | None = None,
+):
     """Initialize ~/.dori using boilerplate files shipped with Dori."""
     reminders_backend = _normalize_reminders_backend(reminders_backend)
+    search_backend = _normalize_search_backend(search_backend)
     repo_root, boilerplate_dir, used_fallback = _resolve_boilerplate_dir(cwd)
     runtime_home = get_runtime_home()
 
@@ -298,7 +371,7 @@ def init_workspace(cwd: str, reminders_backend: str | None = None):
     if scripts_src.is_dir():
         scripts_dest.mkdir(exist_ok=True)
         for src in scripts_src.glob("*.py"):
-            if src.relative_to(boilerplate_dir) == REMINDERS_SCRIPT:
+            if src.relative_to(boilerplate_dir) in {REMINDERS_SCRIPT, SEARCH_SCRIPT}:
                 continue
             dest = scripts_dest / src.name
             if dest.exists():
@@ -322,7 +395,7 @@ def init_workspace(cwd: str, reminders_backend: str | None = None):
     if skills_src.is_dir():
         for src in skills_src.rglob("*.md"):
             relative = src.relative_to(skills_src)
-            if Path("skills") / relative == REMINDERS_SKILL:
+            if Path("skills") / relative in {REMINDERS_SKILL, SEARCH_SKILL}:
                 continue
             dest = skills_dest / relative
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -347,6 +420,14 @@ def init_workspace(cwd: str, reminders_backend: str | None = None):
             runtime_home,
             repo_root,
             reminders_backend,
+        )
+    )
+    managed_paths.update(
+        _copy_search_preset(
+            boilerplate_dir,
+            runtime_home,
+            repo_root,
+            search_backend,
         )
     )
 

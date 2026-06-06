@@ -47,7 +47,7 @@ def ollama_llama31_available():
 @pytest.fixture
 def dori_runtime(tmp_path, monkeypatch, ollama_llama31_available):
     monkeypatch.setenv("HOME", str(tmp_path))
-    init_workspace(str(Path.cwd()), reminders_backend="template")
+    init_workspace(str(Path.cwd()), reminders_backend="template", search_backend="ddgs")
 
     return RuntimeState(
         cwd=str(tmp_path),
