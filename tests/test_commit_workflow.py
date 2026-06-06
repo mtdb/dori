@@ -548,11 +548,110 @@ def test_suggest_commit_message_repairs_invalid_ollama_suggestion(monkeypatch):
     assert "fix(commit): update commit workflow" in retry_prompt
 
 
+def test_suggest_commit_message_normalizes_common_ollama_format_misses(monkeypatch):
+    responses = [
+        {
+            "message": {
+                "content": (
+                    "test: add tests for importing modules without script dir "
+                    "shadowing and loading ddgs without script dir shadowing"
+                )
+            }
+        },
+        {
+            "message": {
+                "content": (
+                    "(tests): add tests for importing modules without script dir "
+                    "shadowing and loading ddgs without script dir shadowing"
+                )
+            }
+        },
+    ]
+
+    class FakeOllama:
+        @staticmethod
+        def chat(model, messages, options):
+            return responses.pop(0)
+
+    monkeypatch.setattr(commit_workflow, "_load_ollama", lambda: FakeOllama)
+    group = CommitGroup(
+        files=[ChangedFile("tests/test_web_ddgs.py", "modified", diff="+test")],
+        commit_type="test",
+        scope="tests",
+    )
+
+    message = suggest_commit_message(group)
+
+    assert (
+        message == "test(tests): add tests for importing modules without script dir "
+        "shadowing and loading ddgs without script dir shadowing"
+    )
+
+
+def test_suggest_commit_message_uses_higher_temperature_on_retry(monkeypatch):
+    calls = []
+
+    class FakeOllama:
+        @staticmethod
+        def chat(model, messages, options):
+            calls.append(options)
+            return {"message": {"content": "fix(commit): add retry option"}}
+
+    monkeypatch.setattr(commit_workflow, "_load_ollama", lambda: FakeOllama)
+    group = CommitGroup(
+        files=[ChangedFile("dori/commit_workflow.py", "modified", diff="+changed")],
+        commit_type="fix",
+        scope="commit",
+    )
+
+    initial = suggest_commit_message(group)
+    retried = suggest_commit_message(group, retry=True)
+
+    assert initial == "fix(commit): add retry option"
+    assert retried == "fix(commit): add retry option"
+    assert calls == [
+        {"temperature": 0},
+        {"temperature": 0.6},
+    ]
+
+
+def test_suggest_commit_message_uses_first_subject_when_ollama_returns_alternatives(
+    monkeypatch,
+):
+    class FakeOllama:
+        @staticmethod
+        def chat(model, messages, options):
+            return {
+                "message": {
+                    "content": (
+                        "test(tests): add tests for importing modules without script "
+                        "dir shadowing and loading ddgs without script dir shadowing\n\n"
+                        "fix(commit): add retry option\n\n"
+                        "test(tests): test build review message uses ollama suggestion"
+                    )
+                }
+            }
+
+    monkeypatch.setattr(commit_workflow, "_load_ollama", lambda: FakeOllama)
+    group = CommitGroup(
+        files=[ChangedFile("tests/test_commit_workflow.py", "modified", diff="+test")],
+        commit_type="test",
+        scope="tests",
+    )
+
+    message = suggest_commit_message(group, retry=True)
+
+    assert (
+        message == "test(tests): add tests for importing modules without script dir "
+        "shadowing and loading ddgs without script dir shadowing"
+    )
+
+
 def test_build_review_message_uses_ollama_suggestion(monkeypatch):
     monkeypatch.setattr(
         commit_workflow,
         "suggest_commit_message",
-        lambda group: "fix(commit): generate specific commit messages",
+        lambda group, retry=False: "fix(commit): generate specific commit messages",
     )
     group = CommitGroup(
         files=[ChangedFile("dori/commit_workflow.py", "modified")],
@@ -569,7 +668,7 @@ def test_build_review_message_falls_back_when_ollama_returns_none(monkeypatch):
     monkeypatch.setattr(
         commit_workflow,
         "suggest_commit_message",
-        lambda group: None,
+        lambda group, retry=False: None,
     )
     group = CommitGroup(
         files=[ChangedFile("dori/commit_workflow.py", "modified")],
@@ -586,7 +685,7 @@ def test_build_review_message_reports_ollama_connection_failure(monkeypatch):
     monkeypatch.setattr(
         commit_workflow,
         "suggest_commit_message",
-        lambda group: None,
+        lambda group, retry=False: None,
     )
     monkeypatch.setattr(
         commit_workflow,
@@ -619,8 +718,8 @@ def test_review_group_retries_commit_message_suggestion(monkeypatch):
     answers = ["retry", "y"]
     calls = []
 
-    def fake_build_review_message(group, console):
-        calls.append(group)
+    def fake_build_review_message(group, console, retry=False):
+        calls.append(retry)
         return messages.pop(0)
 
     def fake_prompt_ask(*args, **kwargs):
@@ -649,6 +748,7 @@ def test_review_group_retries_commit_message_suggestion(monkeypatch):
     assert accepted is True
     assert group.message == "fix(commit): add retry option"
     assert len(calls) == 2
+    assert calls == [False, True]
 
 
 def test_commit_group_stages_selected_files_and_commits(monkeypatch):
