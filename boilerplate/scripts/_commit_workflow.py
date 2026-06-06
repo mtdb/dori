@@ -28,6 +28,7 @@ ALL_TYPES = [
 STATUS_SYMBOL = {"new": "+", "modified": "~", "deleted": "-", "renamed": "→"}
 COMMIT_MESSAGE_MODEL = "llama3.1:8b"
 COMMIT_MESSAGE_OPTIONS = {"temperature": 0}
+COMMIT_MESSAGE_RETRY_OPTIONS = {"temperature": 0.6}
 MAX_PROMPT_DIFF_LINES = 80
 MAX_COMMIT_MESSAGE_ATTEMPTS = 2
 ollama = None
@@ -394,6 +395,9 @@ def _validate_llm_commit_message(
         return None, "response contains emoji"
 
     subject_line, separator, body = cleaned.partition("\n")
+    subject_line, separator, body = _collapse_alternative_subjects(
+        subject_line, separator, body
+    )
     body_suffix = separator + body
     body_text = body_suffix.strip()
     if separator and not body_text:
@@ -431,6 +435,24 @@ def _validate_llm_commit_message(
         return None, "subject description is too generic"
 
     return (subject if not body_text else subject + body_suffix), None
+
+
+def _collapse_alternative_subjects(
+    subject_line: str, separator: str, body: str
+) -> tuple[str, str, str]:
+    if not separator:
+        return subject_line, separator, body
+
+    non_empty_lines = [line.strip() for line in body.splitlines() if line.strip()]
+    if not non_empty_lines:
+        return subject_line, separator, body
+
+    valid_types = "|".join(re.escape(commit_type) for commit_type in ALL_TYPES)
+    subject_pattern = re.compile(rf"^(?:{valid_types})(?:\([^)]+\))?[!]?:\s+.+$")
+    if all(subject_pattern.match(line) for line in non_empty_lines):
+        return subject_line, "", ""
+
+    return subject_line, separator, body
 
 
 def _normalize_llm_subject(subject: str, group: CommitGroup) -> str:
@@ -479,7 +501,7 @@ def _load_ollama():
     return ollama
 
 
-def suggest_commit_message(group: CommitGroup) -> str | None:
+def suggest_commit_message(group: CommitGroup, retry: bool = False) -> str | None:
     global _last_ollama_error
     _last_ollama_error = None
 
@@ -493,10 +515,11 @@ def suggest_commit_message(group: CommitGroup) -> str | None:
 
     for attempt in range(MAX_COMMIT_MESSAGE_ATTEMPTS):
         try:
+            options = COMMIT_MESSAGE_RETRY_OPTIONS if retry else COMMIT_MESSAGE_OPTIONS
             response = ollama_client.chat(
                 model=COMMIT_MESSAGE_MODEL,
                 messages=messages,
-                options=COMMIT_MESSAGE_OPTIONS,
+                options=options,
             )
         except Exception as exc:
             _last_ollama_error = str(exc).strip() or "Ollama request failed."
@@ -731,9 +754,14 @@ def run_interactive(
     return 0
 
 
-def _build_review_message(group: CommitGroup, console: Console | None = None) -> str:
+def _build_review_message(
+    group: CommitGroup,
+    console: Console | None = None,
+    *,
+    retry: bool = False,
+) -> str:
     fallback = build_commit_message(group)
-    suggestion = suggest_commit_message(group)
+    suggestion = suggest_commit_message(group, retry=retry)
     if suggestion:
         return suggestion
 
@@ -781,7 +809,7 @@ def _review_group(group: CommitGroup, index: int, total: int, console: Console) 
         if answer == "message":
             group.message = _read_multiline_message(console)
         if answer in {"retry", "r"}:
-            group.message = _build_review_message(group, console)
+            group.message = _build_review_message(group, console, retry=True)
 
 
 def _show_group(group: CommitGroup, index: int, total: int, console: Console) -> None:
