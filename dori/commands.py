@@ -632,6 +632,12 @@ def update_workspace(
             )
             continue
 
+        source_md5 = _compute_md5(src)
+        if current_md5 == source_md5:
+            console.print(f"[green]Unchanged[/green] {relative}")
+            manifest[relative] = current_md5
+            continue
+
         shutil.copy2(src, dest)
         manifest[relative] = _compute_md5(dest)
         console.print(f"[green]Updated[/green] {relative}")
