@@ -310,7 +310,7 @@ class NemoApp(App):
         text.append("[↑↓]", style=COLOR_NEMO)
         text.append(" history  ", style="#444444")
         text.append("[ctrl+r]", style=COLOR_USER)
-        text.append(" retry", style="#444444")
+        text.append(" edit", style="#444444")
         text.append("  ", style="#444444")
         text.append("[ctrl+t]", style=COLOR_USER)
         text.append(" translate", style="#444444")
@@ -390,7 +390,10 @@ class NemoApp(App):
 
     async def on_key(self, event: events.Key) -> None:
         if event.key == "ctrl+r":
-            await self._handle_retry()
+            if self._last_user_input is None:
+                return
+            await self._remove_last_exchange()
+            self._edit_last_message()
             event.prevent_default()
             event.stop()
         if event.key == "ctrl+t":
@@ -414,6 +417,20 @@ class NemoApp(App):
 
     def _set_prompt_label(self, value: str) -> None:
         self.query_one("#prompt-label", Static).update(value)
+
+    async def _remove_last_exchange(self) -> None:
+        for widget in reversed(self._last_interaction_widgets):
+            await widget.remove()
+        self._last_interaction_widgets = []
+        self._engine.pop_last_exchange()
+
+    def _edit_last_message(self) -> None:
+        if self._last_user_input is None:
+            return
+        self._history_idx = -1
+        inp = self.query_one(NemoInput)
+        inp.value = self._last_user_input
+        inp.cursor_position = len(self._last_user_input)
 
     async def _run_translation_indicator(self) -> None:
         while True:
@@ -498,10 +515,7 @@ class NemoApp(App):
     async def _handle_retry(self) -> None:
         if self._last_user_input is None:
             return
-        for widget in reversed(self._last_interaction_widgets):
-            await widget.remove()
-        self._last_interaction_widgets = []
-        self._engine.pop_last_exchange()
+        await self._remove_last_exchange()
         self._history_idx = -1
         self._mark_vram_activity()
         await self._send_message(self._last_user_input)

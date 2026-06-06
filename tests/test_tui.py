@@ -408,6 +408,51 @@ def test_clear_command_resets_chat_but_keeps_input_history():
     assert app._history_idx == -1
 
 
+def test_ctrl_r_starts_retry_edit_mode_and_cleans_last_exchange(monkeypatch):
+    state = RuntimeState(cwd="/tmp")
+    app = NemoApp(state)
+    app._last_user_input = "hello again"
+    app._history_idx = 1
+    original_messages = [
+        {"role": "system", "content": "sys"},
+        {"role": "user", "content": "hello"},
+        {"role": "assistant", "content": "hi"},
+    ]
+    app._engine.messages = list(original_messages)
+
+    class DummyWidget:
+        def __init__(self) -> None:
+            self.removed = False
+
+        async def remove(self) -> None:
+            self.removed = True
+
+    widgets = [DummyWidget(), DummyWidget()]
+    app._last_interaction_widgets = widgets
+
+    class DummyInput:
+        def __init__(self) -> None:
+            self.value = ""
+            self.cursor_position = 0
+
+    event = SimpleNamespace(
+        key="ctrl+r",
+        prevent_default=lambda: None,
+        stop=lambda: None,
+    )
+    dummy_input = DummyInput()
+    monkeypatch.setattr(app, "query_one", lambda *args, **kwargs: dummy_input)
+
+    asyncio.run(app.on_key(event))
+
+    assert dummy_input.value == "hello again"
+    assert dummy_input.cursor_position == len("hello again")
+    assert app._history_idx == -1
+    assert app._engine.messages == [{"role": "system", "content": "sys"}]
+    assert app._last_interaction_widgets == []
+    assert all(widget.removed for widget in widgets)
+
+
 def test_action_copy_chat_copies_visible_chat_and_notifies(monkeypatch):
     state = RuntimeState(cwd="/tmp")
     app = NemoApp(state)
