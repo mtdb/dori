@@ -15,6 +15,8 @@ _REQUEST_FD_ENV = "DORI_INTERACTION_REQUEST_FD"
 _RESPONSE_FD_ENV = "DORI_INTERACTION_RESPONSE_FD"
 _DISABLED_ENV = "DORI_INTERACTION_DISABLED"
 _REQUEST_ERROR = "Script emitted malformed interaction JSON."
+_NON_UTF8_STDOUT_ERROR = "Script emitted non-UTF-8 stdout."
+_NON_UTF8_STDERR_ERROR = "Script emitted non-UTF-8 stderr."
 _CANCEL_GRACE_TIMEOUT = 0.2
 
 
@@ -169,6 +171,7 @@ class WorkflowRunner:
         self._response_write_fd = response_write_fd
         self._stdout_buffer: list[str] = []
         self._stderr_buffer: list[str] = []
+        self._stream_errors: list[str] = []
         self._request_queue: asyncio.Queue[InteractionRequest | _ProtocolError] = (
             asyncio.Queue()
         )
@@ -431,7 +434,12 @@ class WorkflowRunner:
                         done=True,
                     )
                     return
-                buffer.append(line.decode("utf-8").rstrip("\n"))
+                try:
+                    decoded = line.decode("utf-8").rstrip("\n")
+                except UnicodeDecodeError:
+                    await self._record_stream_error(stream_name)
+                    return
+                buffer.append(decoded)
                 keep_reading = self._stream_has_pending_data(stream_name)
                 await self._update_stream_state(
                     stream_name,
@@ -468,11 +476,12 @@ class WorkflowRunner:
         return output
 
     def _flush_error_buffer(self) -> str | None:
-        if not self._stderr_buffer:
-            return None
-        error = "\n".join(self._stderr_buffer)
+        combined_errors = [*self._stderr_buffer, *self._stream_errors]
         self._stderr_buffer.clear()
-        return error
+        self._stream_errors.clear()
+        if not combined_errors:
+            return None
+        return "\n".join(combined_errors)
 
     def _write_response(self, payload: dict[str, object]) -> None:
         if self._response_write_fd is None:
@@ -518,6 +527,18 @@ class WorkflowRunner:
                 self._output_generation += 1
             self._output_condition.notify_all()
 
+    async def _record_stream_error(self, stream_name: str) -> None:
+        message = (
+            _NON_UTF8_STDOUT_ERROR
+            if stream_name == "stdout"
+            else _NON_UTF8_STDERR_ERROR
+        )
+        async with self._output_condition:
+            self._stream_reading[stream_name] = False
+            self._stream_done[stream_name] = True
+            self._stream_errors.append(message)
+            self._output_condition.notify_all()
+
     def _streams_are_quiescent(self) -> bool:
         return all(
             self._stream_done[stream_name]
@@ -544,7 +565,10 @@ class WorkflowRunner:
         if pipe is None:
             return False
 
-        readable, _, _ = select.select([pipe], [], [], 0)
+        try:
+            readable, _, _ = select.select([pipe], [], [], 0)
+        except (OSError, ValueError):
+            return False
         return bool(readable)
 
 

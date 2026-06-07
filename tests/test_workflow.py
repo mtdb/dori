@@ -518,6 +518,60 @@ def test_runner_reports_clean_exit_before_requesting_input(tmp_path):
     asyncio.run(scenario())
 
 
+def test_runner_reports_non_utf8_stdout(tmp_path):
+    script_path = _write_script(
+        tmp_path,
+        """
+        import os
+        import sys
+
+        os.write(sys.stdout.fileno(), b"\\xff\\n")
+        """,
+    )
+
+    async def scenario():
+        runner = await WorkflowRunner.start(script_path, {}, cwd=tmp_path)
+        try:
+            boundary = await runner.next_boundary()
+            assert boundary == WorkflowBoundary(
+                output="",
+                request=None,
+                returncode=0,
+                error="Script emitted non-UTF-8 stdout.",
+            )
+        finally:
+            await runner.close()
+
+    asyncio.run(scenario())
+
+
+def test_runner_reports_non_utf8_stderr(tmp_path):
+    script_path = _write_script(
+        tmp_path,
+        """
+        import os
+        import sys
+
+        os.write(sys.stderr.fileno(), b"\\xff\\n")
+        """,
+    )
+
+    async def scenario():
+        runner = await WorkflowRunner.start(script_path, {}, cwd=tmp_path)
+        try:
+            boundary = await runner.next_boundary()
+            assert boundary == WorkflowBoundary(
+                output="",
+                request=None,
+                returncode=0,
+                error="Script emitted non-UTF-8 stderr.",
+            )
+        finally:
+            await runner.close()
+
+    asyncio.run(scenario())
+
+
 def test_runner_cancel_reaps_process_and_returns_cancellation_boundary(tmp_path):
     script_path = _write_script(
         tmp_path,
