@@ -192,11 +192,11 @@ class WorkflowRunner:
         cwd: str | Path,
         interaction_enabled: bool = True,
     ) -> WorkflowRunner:
-        _ = payload
         script = Path(script_path)
         working_directory = Path(cwd)
         env = os.environ.copy()
         env["PYTHONPATH"] = _build_pythonpath(env.get("PYTHONPATH"))
+        payload_json = json.dumps(payload)
 
         request_read_fd: int | None = None
         request_write_fd: int | None = None
@@ -218,6 +218,7 @@ class WorkflowRunner:
             process = await asyncio.create_subprocess_exec(
                 sys.executable,
                 str(script),
+                payload_json,
                 cwd=str(working_directory),
                 env=env,
                 stdout=asyncio.subprocess.PIPE,

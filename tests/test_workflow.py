@@ -21,6 +21,12 @@ def test_normalize_confirm_answers_and_default():
     assert normalize_answer(request, "NO") is False
 
 
+def test_normalize_ask_uses_default_for_empty_input():
+    request = InteractionRequest(1, "ask", "Name", default="Ada")
+
+    assert normalize_answer(request, "") == "Ada"
+
+
 def test_normalize_choose_answers():
     request = InteractionRequest(
         2,
@@ -32,6 +38,18 @@ def test_normalize_choose_answers():
 
     assert normalize_answer(request, "1") == "feat"
     assert normalize_answer(request, "FIX") == "fix"
+
+
+def test_normalize_choose_uses_default_for_empty_input():
+    request = InteractionRequest(
+        2,
+        "choose",
+        "Type",
+        choices=("feat", "fix"),
+        default="fix",
+    )
+
+    assert normalize_answer(request, "") == "fix"
 
 
 def test_invalid_choose_answer_raises():
@@ -150,6 +168,38 @@ def test_runner_pauses_and_resumes_with_buffered_output(tmp_path):
             final = await runner.answer("")
             assert final == WorkflowBoundary(
                 output="approved=True",
+                request=None,
+                returncode=0,
+                error=None,
+            )
+        finally:
+            await runner.close()
+
+    asyncio.run(scenario())
+
+
+def test_runner_forwards_payload_as_json_argv(tmp_path):
+    script_path = _write_script(
+        tmp_path,
+        """
+        import json
+        import sys
+
+        payload = json.loads(sys.argv[1])
+        print(f"{payload['skill']} cli={payload['cli']} args={payload['args']}", flush=True)
+        """,
+    )
+
+    async def scenario():
+        runner = await WorkflowRunner.start(
+            script_path,
+            {"skill": "commit", "cli": True, "args": ["--amend"]},
+            cwd=tmp_path,
+        )
+        try:
+            boundary = await runner.next_boundary()
+            assert boundary == WorkflowBoundary(
+                output="commit cli=True args=['--amend']",
                 request=None,
                 returncode=0,
                 error=None,
