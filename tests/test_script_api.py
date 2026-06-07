@@ -39,6 +39,13 @@ def test_choose_rejects_empty_duplicate_and_invalid_default():
         choose("Pick", ["a"], default="b")
 
 
+def test_choose_rejects_string_like_choices():
+    with pytest.raises(ValueError, match="sequence of choice strings"):
+        choose("Pick", "abc")
+    with pytest.raises(ValueError, match="sequence of choice strings"):
+        choose("Pick", b"abc")
+
+
 def test_ask_raises_when_interaction_is_disabled(monkeypatch):
     monkeypatch.setenv("DORI_INTERACTION_DISABLED", "1")
 
@@ -140,6 +147,60 @@ def test_choose_sends_compact_request_and_reads_matching_response(monkeypatch):
         "choices": ["feat", "fix"],
         "default": None,
     }
+
+
+def test_request_retries_until_full_json_line_is_written(monkeypatch):
+    request_read, request_write = os.pipe()
+    response_read, response_write = os.pipe()
+    _set_channel_env(monkeypatch, request_write, response_read)
+
+    real_write = script.os.write
+    writes: list[int] = []
+
+    def partial_write(fd: int, data: bytes) -> int:
+        if fd != request_write:
+            return real_write(fd, data)
+
+        chunk_size = min(5, len(data))
+        writes.append(chunk_size)
+        return real_write(fd, data[:chunk_size])
+
+    monkeypatch.setattr(script.os, "write", partial_write)
+
+    request_bytes: list[bytes] = []
+
+    def reply():
+        buffer = bytearray()
+        while True:
+            chunk = os.read(request_read, 1)
+            if chunk == b"\n":
+                break
+            buffer.extend(chunk)
+        request_bytes.append(bytes(buffer))
+        request = json.loads(buffer.decode("utf-8"))
+        os.write(
+            response_write,
+            (
+                json.dumps({"version": 1, "id": request["id"], "answer": "ok"}) + "\n"
+            ).encode("utf-8"),
+        )
+
+    thread = threading.Thread(target=reply)
+    thread.start()
+
+    try:
+        assert ask("Name") == "ok"
+    finally:
+        thread.join(timeout=5)
+        os.close(request_read)
+        os.close(request_write)
+        os.close(response_read)
+        os.close(response_write)
+
+    assert len(writes) > 1
+    request = json.loads(request_bytes[0].decode("utf-8"))
+    assert request["type"] == "ask"
+    assert request["prompt"] == "Name"
 
 
 def test_request_raises_for_mismatched_response_id(monkeypatch):

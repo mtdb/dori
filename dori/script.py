@@ -97,6 +97,8 @@ def _validate_prompt(prompt: str) -> str:
 
 
 def _validate_choices(choices: Sequence[str], default: str | None) -> list[str]:
+    if isinstance(choices, (str, bytes)):
+        raise ValueError("choose requires a sequence of choice strings")
     if not choices:
         raise ValueError("choose requires at least one choice")
 
@@ -158,7 +160,7 @@ def _request(payload: dict[str, Any]) -> dict[str, Any] | None:
     )
 
     try:
-        os.write(request_fd, encoded_message)
+        _write_all(request_fd, encoded_message)
     except OSError as error:
         raise RuntimeError("Failed to write Dori interaction request.") from error
 
@@ -209,3 +211,12 @@ def _read_line(fd: int) -> str | None:
         return chunks.decode("utf-8")
     except UnicodeDecodeError as error:
         raise RuntimeError("Dori returned non-UTF-8 interaction data.") from error
+
+
+def _write_all(fd: int, data: bytes) -> None:
+    total_written = 0
+    while total_written < len(data):
+        written = os.write(fd, data[total_written:])
+        if written <= 0:
+            raise OSError("short write")
+        total_written += written
