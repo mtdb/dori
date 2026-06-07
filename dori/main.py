@@ -126,7 +126,7 @@ def run():
 def _run_inline(state: RuntimeState, prompt: str) -> None:
     """Execute a single conversation turn and print the result to stdout."""
     console = Console()
-    engine = ConversationEngine(state)
+    engine = ConversationEngine(state, allow_script_interaction=False)
     try:
         response = asyncio.run(engine.send(prompt))
     except Exception as e:

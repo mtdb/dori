@@ -26,13 +26,7 @@ from textual.css.query import NoMatches
 from textual.widget import Widget
 from textual.widgets import Input, Static
 
-from dori.chat import (
-    ChatResponse,
-    ConversationEngine,
-    build_system_prompt,
-    parse_skill,
-    run_skill,
-)
+from dori.chat import ChatResponse, ConversationEngine, build_system_prompt, parse_skill
 from dori.loader import get_runtime_home, load_available_vram
 from dori.models import RuntimeState
 
@@ -41,8 +35,6 @@ from dori.models import RuntimeState
 # ---------------------------------------------------------------------------
 _build_system_prompt = build_system_prompt
 _parse_skill = parse_skill
-_run_skill = run_skill
-
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -59,6 +51,7 @@ VRAM_POLL_BUCKETS = (1, 5, 10, 15, 20, 30)
 VRAM_UPDATE_THRESHOLD_MIB = 64
 TRANSLATION_PROMPT_LABEL = "❯"
 TRANSLATION_INDICATOR_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+ACTIVE_WORKFLOW_MESSAGE = "Finish the active workflow or use /cancel first"
 
 
 # ---------------------------------------------------------------------------
@@ -289,6 +282,9 @@ class NemoApp(App):
     def _messages(self, value: list[dict]) -> None:
         self._engine.messages = value
 
+    def _has_active_workflow(self) -> bool:
+        return bool(getattr(self._engine, "has_active_workflow", False))
+
     def compose(self) -> ComposeResult:
         yield Horizontal(
             Static(f"◆ {AGENT_DISPLAY_NAME}", id="header-left"),
@@ -340,6 +336,9 @@ class NemoApp(App):
 
     async def on_unmount(self) -> None:
         if self._vram_poll_task is None:
+            close = getattr(self._engine, "close", None)
+            if close is not None:
+                await close()
             return
         self._vram_poll_task.cancel()
         with suppress(asyncio.CancelledError):
@@ -347,6 +346,9 @@ class NemoApp(App):
         self._vram_poll_task = None
         self._vram_poll_wakeup = None
         await self._stop_translation_indicator()
+        close = getattr(self._engine, "close", None)
+        if close is not None:
+            await close()
 
     def _mark_vram_activity(self) -> None:
         self._last_user_activity_monotonic = time.monotonic()
@@ -394,7 +396,14 @@ class NemoApp(App):
 
     async def on_key(self, event: events.Key) -> None:
         if event.key == "ctrl+r":
-            if self._last_user_input is None:
+            if self._has_active_workflow():
+                self.notify(
+                    ACTIVE_WORKFLOW_MESSAGE,
+                    title=AGENT_DISPLAY_NAME,
+                    severity="warning",
+                )
+                event.prevent_default()
+                event.stop()
                 return
             await self._remove_last_exchange()
             self._edit_last_message()
@@ -426,6 +435,13 @@ class NemoApp(App):
             pass
 
     async def _remove_last_exchange(self) -> None:
+        if self._has_active_workflow():
+            self.notify(
+                ACTIVE_WORKFLOW_MESSAGE,
+                title=AGENT_DISPLAY_NAME,
+                severity="warning",
+            )
+            return
         for widget in reversed(self._last_interaction_widgets):
             await widget.remove()
         self._last_interaction_widgets = []
@@ -469,6 +485,9 @@ class NemoApp(App):
         self._set_prompt_label(TRANSLATION_PROMPT_LABEL)
 
     async def _send_message(self, user_input: str) -> None:
+        await self._run_user_turn(user_input, self._engine.send)
+
+    async def _run_user_turn(self, user_input: str, responder) -> None:
         msg_list = self.query_one(MessageList)
         user_widget = MessageWidget("user", user_input)
         await msg_list.mount(user_widget)
@@ -476,7 +495,7 @@ class NemoApp(App):
         await msg_list.mount(thinking)
         msg_list.scroll_end()
         try:
-            chat_response = await self._engine.send(user_input)
+            chat_response = await responder(user_input)
             await thinking.remove()
             response_widget = await self._mount_nemo_response(msg_list, chat_response)
             self._last_interaction_widgets = [user_widget, response_widget]
@@ -513,6 +532,18 @@ class NemoApp(App):
             await self._handle_clear()
             return
 
+        if user_input.lower() == "/cancel":
+            await self._cancel_active_workflow()
+            return
+
+        if self._has_active_workflow():
+            self._last_user_input = user_input
+            self._mark_vram_activity()
+            self._history = append_input_history(user_input)
+            self._history_idx = -1
+            await self._run_user_turn(user_input, self._engine.answer_workflow)
+            return
+
         self._last_user_input = user_input
         self._mark_vram_activity()
         self._history = append_input_history(user_input)
@@ -522,6 +553,13 @@ class NemoApp(App):
     async def _handle_retry(self) -> None:
         if self._last_user_input is None:
             return
+        if self._has_active_workflow():
+            self.notify(
+                ACTIVE_WORKFLOW_MESSAGE,
+                title=AGENT_DISPLAY_NAME,
+                severity="warning",
+            )
+            return
         await self._remove_last_exchange()
         self._history_idx = -1
         self._mark_vram_activity()
@@ -529,6 +567,13 @@ class NemoApp(App):
 
     async def _handle_translate_input(self) -> None:
         if self._translation_in_progress:
+            return
+        if self._has_active_workflow():
+            self.notify(
+                ACTIVE_WORKFLOW_MESSAGE,
+                title=AGENT_DISPLAY_NAME,
+                severity="warning",
+            )
             return
         inp = self.query_one(NemoInput)
         draft = inp.value.strip()
@@ -562,6 +607,13 @@ class NemoApp(App):
         inp.cursor_position = len(translated)
 
     async def _handle_clear(self) -> None:
+        if self._has_active_workflow():
+            self.notify(
+                ACTIVE_WORKFLOW_MESSAGE,
+                title=AGENT_DISPLAY_NAME,
+                severity="warning",
+            )
+            return
         msg_list = self.query_one(MessageList)
         for widget in reversed(msg_list.children):
             await widget.remove()
@@ -569,6 +621,19 @@ class NemoApp(App):
         self._last_user_input = None
         self._last_interaction_widgets = []
         self._history_idx = -1
+
+    async def _cancel_active_workflow(self) -> None:
+        if not self._has_active_workflow():
+            self.notify(
+                "No active workflow to cancel",
+                title=AGENT_DISPLAY_NAME,
+                severity="warning",
+            )
+            return
+        self._mark_vram_activity()
+        await self._run_user_turn(
+            "/cancel", lambda _value: self._engine.cancel_workflow()
+        )
 
     def _copy_chat_to_clipboard(self) -> None:
         msg_list = self.query_one(MessageList)

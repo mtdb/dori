@@ -13,12 +13,14 @@ import re
 import subprocess
 import sys
 from dataclasses import dataclass
+from pathlib import Path
 
 import ollama
 
 from dori.loader import get_runtime_home
 from dori.models import RuntimeState
 from dori.schemas import validate_skill_payload
+from dori.workflow import InteractionRequest, WorkflowBoundary, WorkflowRunner
 
 
 def _chat_with_model(state: RuntimeState, messages: list[dict]) -> dict:
@@ -238,6 +240,7 @@ class ChatResponse:
     display_text: str
     resolved_skill: dict | None
     skill_output: str | None
+    workflow_pending: bool = False
 
 
 class ConversationEngine:
@@ -249,11 +252,21 @@ class ConversationEngine:
     display-text construction.
     """
 
-    def __init__(self, state: RuntimeState) -> None:
+    def __init__(
+        self,
+        state: RuntimeState,
+        allow_script_interaction: bool = True,
+    ) -> None:
         self.state = state
+        self.allow_script_interaction = allow_script_interaction
         self.messages: list[dict] = [
             {"role": "system", "content": build_system_prompt(state)}
         ]
+        self._active_workflow: WorkflowRunner | None = None
+
+    @property
+    def has_active_workflow(self) -> bool:
+        return self._active_workflow is not None
 
     async def translate_to_english(self, text: str) -> str:
         """Translate draft input without changing the conversation history."""
@@ -323,6 +336,99 @@ class ConversationEngine:
             return None
         payload.setdefault("raw_text", user_message)
         return payload
+
+    def _script_path_for_skill(self, skill_name: str) -> Path:
+        return get_runtime_home() / "scripts" / f"{skill_name}.py"
+
+    def _format_interaction_request(self, request: InteractionRequest) -> str:
+        if request.kind == "confirm":
+            if request.default is True:
+                suffix = " (Y/n)"
+            elif request.default is False:
+                suffix = " (y/N)"
+            else:
+                suffix = " (y/n)"
+            return f"{request.prompt}{suffix}"
+
+        if request.kind == "choose":
+            options = ", ".join(request.choices)
+            if request.default is not None:
+                return f"{request.prompt} ({options}) (default: {request.default})"
+            return f"{request.prompt} ({options})"
+
+        if request.default is not None:
+            return f"{request.prompt} (default: {request.default})"
+        return request.prompt
+
+    def _response_from_boundary(
+        self,
+        *,
+        content: str,
+        resolved_skill: dict,
+        boundary: WorkflowBoundary,
+    ) -> ChatResponse:
+        lines: list[str] = []
+        if boundary.request is None and boundary.returncode == 0:
+            lines.append(f"✓ {resolved_skill['skill']}")
+        if boundary.output:
+            lines.append(boundary.output)
+        if boundary.error:
+            lines.append(boundary.error)
+        workflow_pending = boundary.request is not None
+        if boundary.request is not None:
+            lines.append(self._format_interaction_request(boundary.request))
+
+        display_text = "\n".join(line for line in lines if line).strip()
+        if not display_text:
+            display_text = f"✓ {resolved_skill['skill']}"
+        elif self.state.debug:
+            display_text = f"{display_text}\n{content}"
+
+        return ChatResponse(
+            raw_content=content,
+            display_text=display_text,
+            resolved_skill=resolved_skill,
+            skill_output=boundary.output or None,
+            workflow_pending=workflow_pending,
+        )
+
+    async def _close_active_workflow(self) -> None:
+        if self._active_workflow is None:
+            return
+        runner = self._active_workflow
+        self._active_workflow = None
+        await runner.close()
+
+    async def answer_workflow(self, value: str) -> ChatResponse:
+        if self._active_workflow is None:
+            raise RuntimeError("No active workflow.")
+
+        boundary = await self._active_workflow.answer(value)
+        resolved_skill = {"skill": "workflow", "confidence": 1.0, "raw_text": value}
+        response = self._response_from_boundary(
+            content="",
+            resolved_skill=resolved_skill,
+            boundary=boundary,
+        )
+        if not response.workflow_pending:
+            await self._close_active_workflow()
+        return response
+
+    async def cancel_workflow(self) -> ChatResponse:
+        if self._active_workflow is None:
+            raise RuntimeError("No active workflow.")
+        boundary = await self._active_workflow.cancel()
+        await self._close_active_workflow()
+        message = boundary.error or "Workflow cancelled."
+        return ChatResponse(
+            raw_content="",
+            display_text=message,
+            resolved_skill=None,
+            skill_output=boundary.output or None,
+        )
+
+    async def close(self) -> None:
+        await self._close_active_workflow()
 
     async def send(self, user_input: str) -> ChatResponse:
         """
@@ -401,14 +507,32 @@ class ConversationEngine:
         skill_output: str | None = None
         if resolved_skill:
             skill_name = resolved_skill["skill"]
-            skill_output = await asyncio.to_thread(
-                run_skill, skill_name, resolved_skill, cwd=self.state.cwd
+            script_path = self._script_path_for_skill(skill_name)
+            if not script_path.is_file():
+                return ChatResponse(
+                    raw_content=content,
+                    display_text=f"[red]Script for skill '{skill_name}' not found[/red]",
+                    resolved_skill=resolved_skill,
+                    skill_output=None,
+                )
+
+            runner = await WorkflowRunner.start(
+                script_path,
+                resolved_skill,
+                cwd=self.state.cwd,
+                interaction_enabled=self.allow_script_interaction,
             )
-            display_text = f"✓ {skill_name}"
-            if self.state.debug:
-                display_text += f"\n{content}"
-            if skill_output:
-                display_text += f"\n{skill_output}"
+            boundary = await runner.next_boundary()
+            response = self._response_from_boundary(
+                content=content,
+                resolved_skill=resolved_skill,
+                boundary=boundary,
+            )
+            if response.workflow_pending:
+                self._active_workflow = runner
+            else:
+                await runner.close()
+            return response
         else:
             if clarify_message:
                 display_text = clarify_message
