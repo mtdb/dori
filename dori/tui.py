@@ -22,6 +22,7 @@ from textual import events
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, ScrollableContainer
+from textual.css.query import NoMatches
 from textual.widget import Widget
 from textual.widgets import Input, Static
 
@@ -366,8 +367,11 @@ class NemoApp(App):
             return
         self._state.available_vram_mib = free_mib
         self._state.total_vram_mib = total_mib
-        header_right = self.query_one("#header-right", Static)
-        header_right.update(_build_header_status(self._state))
+        try:
+            header_right = self.query_one("#header-right", Static)
+            header_right.update(_build_header_status(self._state))
+        except NoMatches:
+            pass
 
     async def _poll_vram_header(self) -> None:
         assert self._vram_poll_wakeup is not None
@@ -416,7 +420,10 @@ class NemoApp(App):
         inp.cursor_position = len(value)
 
     def _set_prompt_label(self, value: str) -> None:
-        self.query_one("#prompt-label", Static).update(value)
+        try:
+            self.query_one("#prompt-label", Static).update(value)
+        except NoMatches:
+            pass
 
     async def _remove_last_exchange(self) -> None:
         for widget in reversed(self._last_interaction_widgets):
