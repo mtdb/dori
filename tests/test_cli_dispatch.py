@@ -3,7 +3,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from dori.main import run, run_cli_skill
+from dori.chat import ChatResponse
+from dori.main import _run_inline, run, run_cli_skill
+from dori.models import RuntimeState
 
 
 def test_cli_dispatches_skill_name_to_runtime_script(tmp_path, monkeypatch, capfd):
@@ -94,3 +96,26 @@ def test_cli_dispatches_update_command(monkeypatch):
     run()
 
     assert called == ["/tmp/dori-project"]
+
+
+def test_run_inline_disables_script_interaction(monkeypatch, capsys):
+    seen: list[bool] = []
+
+    class FakeEngine:
+        def __init__(self, state, *, allow_script_interaction: bool = True):
+            seen.append(allow_script_interaction)
+
+        async def send(self, prompt: str) -> ChatResponse:
+            return ChatResponse(
+                raw_content="",
+                display_text="done",
+                resolved_skill=None,
+                skill_output=None,
+            )
+
+    monkeypatch.setattr("dori.main.ConversationEngine", FakeEngine)
+
+    _run_inline(RuntimeState(cwd="/tmp"), "hello")
+
+    assert seen == [False]
+    assert capsys.readouterr().out.strip() == "done"

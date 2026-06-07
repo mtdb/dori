@@ -6,8 +6,9 @@ skill execution, and the full ConversationEngine.send() turn lifecycle.
 """
 
 import asyncio
+from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -20,6 +21,7 @@ from dori.chat import (
     strip_skill_payload,
 )
 from dori.models import RuntimeState, Skill
+from dori.workflow import InteractionRequest, WorkflowBoundary
 
 # ---------------------------------------------------------------------------
 # parse_skill
@@ -147,6 +149,32 @@ def _make_ollama_response(content: str) -> dict:
     return {"message": {"content": content}}
 
 
+class FakeRunner:
+    def __init__(self, boundaries: list[WorkflowBoundary]) -> None:
+        self._boundaries = iter(boundaries)
+        self.answers: list[str] = []
+        self.cancelled = False
+        self.closed = False
+
+    async def next_boundary(self) -> WorkflowBoundary:
+        return next(self._boundaries)
+
+    async def answer(self, value: str) -> WorkflowBoundary:
+        self.answers.append(value)
+        return next(self._boundaries)
+
+    async def cancel(self) -> WorkflowBoundary:
+        self.cancelled = True
+        return WorkflowBoundary(
+            output="cancelled",
+            returncode=0,
+            error="Workflow cancelled.",
+        )
+
+    async def close(self) -> None:
+        self.closed = True
+
+
 def test_engine_send_plain_response():
     state = RuntimeState(cwd="/tmp")
     engine = ConversationEngine(state)
@@ -187,15 +215,20 @@ def test_engine_send_removes_user_message_on_ollama_error():
 def test_engine_send_executes_high_confidence_skill():
     state = RuntimeState(cwd="/tmp", skill_confidence_threshold=0.8)
     engine = ConversationEngine(state)
+    runner = FakeRunner([WorkflowBoundary(output="22°C, sunny", returncode=0)])
 
     raw = '{"skill": "search", "query": "Madrid weather", "confidence": 0.92}'
     with (
         patch("dori.chat.ollama.chat", return_value=_make_ollama_response(raw)),
-        patch("dori.chat.run_skill", return_value="22°C, sunny") as mock_run,
+        patch.object(engine, "_script_path_for_skill", return_value=Path(__file__)),
+        patch(
+            "dori.chat.WorkflowRunner.start",
+            new=AsyncMock(return_value=runner),
+        ) as mock_start,
     ):
         response = asyncio.run(engine.send("What's the weather in Madrid?"))
 
-    mock_run.assert_called_once()
+    mock_start.assert_awaited_once()
     assert response.resolved_skill is not None
     assert response.resolved_skill["skill"] == "search"
     assert response.skill_output == "22°C, sunny"
@@ -204,9 +237,125 @@ def test_engine_send_executes_high_confidence_skill():
     assert '"skill"' not in response.display_text
 
 
+def test_engine_starts_skill_workflow_and_tracks_pending_request():
+    state = RuntimeState(
+        cwd="/tmp",
+        skill_confidence_threshold=0.8,
+        skills=[Skill(name="commit", path="devtools/commit.md", content="# Commit")],
+    )
+    engine = ConversationEngine(state)
+    boundary = WorkflowBoundary(
+        output="Group 1/1",
+        request=InteractionRequest(1, "confirm", "Commit this group?", default=True),
+    )
+    runner = FakeRunner([boundary])
+    raw = '{"skill": "commit", "confidence": 0.95, "raw_text": "commit my changes"}'
+
+    with (
+        patch("dori.chat.ollama.chat", return_value=_make_ollama_response(raw)),
+        patch(
+            "dori.chat.WorkflowRunner.start",
+            new=AsyncMock(return_value=runner),
+        ),
+    ):
+        response = asyncio.run(engine.send("commit my changes"))
+
+    assert response.workflow_pending is True
+    assert "Group 1/1" in response.display_text
+    assert "Commit this group?" in response.display_text
+    assert "(Y/n)" in response.display_text
+    assert engine.has_active_workflow is True
+
+
+def test_engine_formats_choose_workflow_defaults_without_rich_markup_brackets():
+    state = RuntimeState(cwd="/tmp")
+    engine = ConversationEngine(state)
+
+    response = engine._response_from_boundary(
+        content="",
+        resolved_skill={"skill": "workflow", "confidence": 1.0, "raw_text": "type"},
+        boundary=WorkflowBoundary(
+            output="Pick a type",
+            request=InteractionRequest(
+                1,
+                "choose",
+                "Commit this group?",
+                choices=("y", "n"),
+                default="y",
+            ),
+        ),
+    )
+
+    assert "Commit this group? (y, n) (default: y)" in response.display_text
+    assert "[default:" not in response.display_text
+
+
+def test_engine_answer_workflow_does_not_change_llm_history():
+    state = RuntimeState(cwd="/tmp")
+    engine = ConversationEngine(state)
+    engine._active_workflow = FakeRunner(
+        [WorkflowBoundary(output="Committed abc123", returncode=0)]
+    )
+    before = list(engine.messages)
+
+    response = asyncio.run(engine.answer_workflow("yes"))
+
+    assert response.workflow_pending is False
+    assert engine.messages == before
+    assert engine.has_active_workflow is False
+
+
+def test_engine_answer_workflow_returns_validation_error_without_clearing_runner():
+    state = RuntimeState(cwd="/tmp")
+    engine = ConversationEngine(state)
+    request = InteractionRequest(1, "choose", "Type", choices=("feat", "fix"))
+    engine._active_workflow = FakeRunner(
+        [
+            WorkflowBoundary(
+                output="",
+                request=request,
+                error="Choose responses must select a listed choice.",
+            )
+        ]
+    )
+
+    response = asyncio.run(engine.answer_workflow("docs"))
+
+    assert response.workflow_pending is True
+    assert "Choose responses must select a listed choice." in response.display_text
+    assert "Type" in response.display_text
+    assert engine.has_active_workflow is True
+
+
+def test_engine_cancel_workflow_closes_runner_and_clears_state():
+    state = RuntimeState(cwd="/tmp")
+    engine = ConversationEngine(state)
+    runner = FakeRunner([])
+    engine._active_workflow = runner
+
+    response = asyncio.run(engine.cancel_workflow())
+
+    assert response.display_text == "Workflow cancelled."
+    assert runner.closed is True
+    assert engine.has_active_workflow is False
+
+
+def test_engine_reset_closes_active_workflow():
+    state = RuntimeState(cwd="/tmp")
+    engine = ConversationEngine(state)
+    runner = FakeRunner([])
+    engine._active_workflow = runner
+
+    asyncio.run(engine.close())
+
+    assert runner.closed is True
+    assert engine.has_active_workflow is False
+
+
 def test_engine_send_executes_skill_from_runtime_cwd():
     state = RuntimeState(cwd="/workspace/project", skill_confidence_threshold=0.8)
     engine = ConversationEngine(state)
+    runner = FakeRunner([WorkflowBoundary(output="folder summary", returncode=0)])
 
     raw = (
         '{"skill": "analyze-folder", "confidence": 0.95, '
@@ -214,18 +363,23 @@ def test_engine_send_executes_skill_from_runtime_cwd():
     )
     with (
         patch("dori.chat.ollama.chat", return_value=_make_ollama_response(raw)),
-        patch("dori.chat.run_skill", return_value="folder summary") as mock_run,
+        patch.object(engine, "_script_path_for_skill", return_value=Path(__file__)),
+        patch(
+            "dori.chat.WorkflowRunner.start",
+            new=AsyncMock(return_value=runner),
+        ) as mock_start,
     ):
         response = asyncio.run(engine.send("analize this folder"))
 
-    mock_run.assert_called_once_with(
-        "analyze-folder",
+    mock_start.assert_awaited_once_with(
+        Path(__file__),
         {
             "skill": "analyze-folder",
             "confidence": 0.95,
             "raw_text": "analize this folder",
         },
         cwd="/workspace/project",
+        interaction_enabled=True,
     )
     assert response.skill_output == "folder summary"
 
@@ -269,11 +423,16 @@ def test_engine_send_ignores_low_confidence_skill():
 def test_engine_send_shows_raw_json_in_debug_mode():
     state = RuntimeState(cwd="/tmp", debug=True, skill_confidence_threshold=0.8)
     engine = ConversationEngine(state)
+    runner = FakeRunner([WorkflowBoundary(output="some result", returncode=0)])
 
     raw = '{"skill": "search", "query": "news", "confidence": 0.9}'
     with (
         patch("dori.chat.ollama.chat", return_value=_make_ollama_response(raw)),
-        patch("dori.chat.run_skill", return_value="some result"),
+        patch.object(engine, "_script_path_for_skill", return_value=Path(__file__)),
+        patch(
+            "dori.chat.WorkflowRunner.start",
+            new=AsyncMock(return_value=runner),
+        ),
     ):
         response = asyncio.run(engine.send("latest news"))
 
@@ -396,16 +555,21 @@ def test_engine_send_extracts_git_payload_when_topic_missing():
             '{"skill": "git", "confidence": 0.95, "topic": "rebase", "raw_text": "How do I squash commits?"}'
         ),
     ]
+    runner = FakeRunner(
+        [WorkflowBoundary(output="🌿 [Git - rebase]\nSummary: ok", returncode=0)]
+    )
 
     with (
         patch("dori.chat.ollama.chat", side_effect=responses),
         patch(
-            "dori.chat.run_skill", return_value="🌿 [Git - rebase]\nSummary: ok"
-        ) as mock_run,
+            "dori.chat.WorkflowRunner.start",
+            new=AsyncMock(return_value=runner),
+        ) as mock_start,
+        patch.object(engine, "_script_path_for_skill", return_value=Path(__file__)),
     ):
         response = asyncio.run(engine.send("How do I squash commits?"))
 
-    mock_run.assert_called_once()
+    mock_start.assert_awaited_once()
     assert response.resolved_skill is not None
     assert response.resolved_skill["skill"] == "git"
     assert response.resolved_skill["topic"] == "rebase"

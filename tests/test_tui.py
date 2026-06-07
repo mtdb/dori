@@ -143,6 +143,87 @@ def test_on_input_submitted_persists_normal_messages(tmp_path, monkeypatch):
     assert load_input_history() == ["hello world"]
 
 
+def test_on_input_submitted_routes_to_active_workflow(tmp_path, monkeypatch):
+    monkeypatch.setattr("dori.tui.get_runtime_home", lambda: tmp_path)
+    state = RuntimeState(cwd="/tmp")
+    app = NemoApp(state)
+    app._vram_poll_wakeup = asyncio.Event()
+    answers: list[str] = []
+
+    async def fake_send_message(value: str) -> None:
+        raise AssertionError("normal send should not run while workflow is active")
+
+    async def fake_answer_workflow(value: str) -> ChatResponse:
+        answers.append(value)
+        return ChatResponse(
+            raw_content="",
+            display_text="✓ workflow\nCommitted.",
+            resolved_skill=None,
+            skill_output="Committed.",
+        )
+
+    app._engine = SimpleNamespace(
+        has_active_workflow=True,
+        answer_workflow=fake_answer_workflow,
+    )
+    monkeypatch.setattr(app, "_send_message", fake_send_message)
+    monkeypatch.setattr(
+        app, "query_one", lambda *args, **kwargs: SimpleNamespace(value="")
+    )
+    routed: list[tuple[str, object]] = []
+
+    async def fake_run_user_turn(user_input: str, responder) -> None:
+        routed.append((user_input, responder))
+        await responder(user_input)
+
+    monkeypatch.setattr(app, "_run_user_turn", fake_run_user_turn)
+
+    asyncio.run(app.on_input_submitted(SimpleNamespace(value="yes")))
+
+    assert answers == ["yes"]
+    assert load_input_history() == ["yes"]
+
+
+def test_on_input_submitted_cancels_active_workflow_without_persisting(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr("dori.tui.get_runtime_home", lambda: tmp_path)
+    state = RuntimeState(cwd="/tmp")
+    app = NemoApp(state)
+    app._vram_poll_wakeup = asyncio.Event()
+    cancelled: list[bool] = []
+
+    async def fake_cancel_workflow() -> ChatResponse:
+        cancelled.append(True)
+        return ChatResponse(
+            raw_content="",
+            display_text="Workflow cancelled.",
+            resolved_skill=None,
+            skill_output=None,
+        )
+
+    app._engine = SimpleNamespace(
+        has_active_workflow=True,
+        cancel_workflow=fake_cancel_workflow,
+    )
+    monkeypatch.setattr(
+        app, "query_one", lambda *args, **kwargs: SimpleNamespace(value="")
+    )
+    routed: list[str] = []
+
+    async def fake_run_user_turn(user_input: str, responder) -> None:
+        routed.append(user_input)
+        await responder(user_input)
+
+    monkeypatch.setattr(app, "_run_user_turn", fake_run_user_turn)
+
+    asyncio.run(app.on_input_submitted(SimpleNamespace(value="/cancel")))
+
+    assert cancelled == [True]
+    assert routed == ["/cancel"]
+    assert load_input_history() == []
+
+
 def test_clear_command_keeps_persistent_input_history(tmp_path, monkeypatch):
     monkeypatch.setattr("dori.tui.get_runtime_home", lambda: tmp_path)
     append_input_history("first")
@@ -239,6 +320,32 @@ def test_on_input_submitted_marks_vram_activity_before_sending(monkeypatch):
     assert app._vram_poll_wakeup.is_set()
 
 
+def test_retry_is_blocked_while_workflow_is_active(monkeypatch):
+    state = RuntimeState(cwd="/tmp")
+    app = NemoApp(state)
+    app._last_user_input = "hello again"
+    notifications: list[tuple[str, str, str | None]] = []
+
+    def fake_notify(
+        message: str,
+        *,
+        title: str = "",
+        severity: str = "information",
+        timeout: float | None = None,
+        markup: bool = True,
+    ) -> None:
+        notifications.append((message, title, severity))
+
+    app._engine = SimpleNamespace(has_active_workflow=True)
+    monkeypatch.setattr(app, "notify", fake_notify)
+
+    asyncio.run(app._handle_retry())
+
+    assert notifications == [
+        ("Finish the active workflow or use /cancel first", "Dori", "warning")
+    ]
+
+
 def test_translate_input_blank_is_noop(monkeypatch):
     state = RuntimeState(cwd="/tmp")
     app = NemoApp(state)
@@ -261,6 +368,36 @@ def test_translate_input_blank_is_noop(monkeypatch):
     asyncio.run(app._handle_translate_input())
 
     assert fake_engine.called is False
+
+
+def test_translate_is_blocked_while_workflow_is_active(monkeypatch):
+    state = RuntimeState(cwd="/tmp")
+    app = NemoApp(state)
+    notifications: list[tuple[str, str, str | None]] = []
+
+    class DummyInput:
+        value = "Resume esta carpeta."
+        cursor_position = 0
+
+    def fake_notify(
+        message: str,
+        *,
+        title: str = "",
+        severity: str = "information",
+        timeout: float | None = None,
+        markup: bool = True,
+    ) -> None:
+        notifications.append((message, title, severity))
+
+    app._engine = SimpleNamespace(has_active_workflow=True)
+    monkeypatch.setattr(app, "query_one", lambda *args, **kwargs: DummyInput())
+    monkeypatch.setattr(app, "notify", fake_notify)
+
+    asyncio.run(app._handle_translate_input())
+
+    assert notifications == [
+        ("Finish the active workflow or use /cancel first", "Dori", "warning")
+    ]
 
 
 def test_translate_input_replaces_value_and_cursor(monkeypatch):
@@ -451,6 +588,37 @@ def test_ctrl_r_starts_retry_edit_mode_and_cleans_last_exchange(monkeypatch):
     assert app._engine.messages == [{"role": "system", "content": "sys"}]
     assert app._last_interaction_widgets == []
     assert all(widget.removed for widget in widgets)
+
+
+def test_ctrl_r_is_blocked_while_workflow_is_active(monkeypatch):
+    state = RuntimeState(cwd="/tmp")
+    app = NemoApp(state)
+    app._last_user_input = "hello again"
+    notifications: list[tuple[str, str, str | None]] = []
+
+    def fake_notify(
+        message: str,
+        *,
+        title: str = "",
+        severity: str = "information",
+        timeout: float | None = None,
+        markup: bool = True,
+    ) -> None:
+        notifications.append((message, title, severity))
+
+    event = SimpleNamespace(
+        key="ctrl+r",
+        prevent_default=lambda: None,
+        stop=lambda: None,
+    )
+    app._engine = SimpleNamespace(has_active_workflow=True)
+    monkeypatch.setattr(app, "notify", fake_notify)
+
+    asyncio.run(app.on_key(event))
+
+    assert notifications == [
+        ("Finish the active workflow or use /cancel first", "Dori", "warning")
+    ]
 
 
 def test_action_copy_chat_copies_visible_chat_and_notifies(monkeypatch):

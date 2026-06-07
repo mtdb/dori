@@ -722,9 +722,10 @@ def test_review_group_retries_commit_message_suggestion(monkeypatch):
         calls.append(retry)
         return messages.pop(0)
 
-    def fake_prompt_ask(*args, **kwargs):
-        assert "retry" in kwargs["choices"]
-        assert "r" in kwargs["choices"]
+    def fake_choose(prompt, choices, default=None):
+        assert prompt == "Commit this group?"
+        assert "retry" in choices
+        assert "r" not in choices
         return answers.pop(0)
 
     monkeypatch.setattr(
@@ -732,7 +733,7 @@ def test_review_group_retries_commit_message_suggestion(monkeypatch):
         "_build_review_message",
         fake_build_review_message,
     )
-    monkeypatch.setattr(commit_workflow.Prompt, "ask", fake_prompt_ask)
+    monkeypatch.setattr(commit_workflow, "choose", fake_choose)
     group = CommitGroup(
         files=[ChangedFile("dori/commit_workflow.py", "modified")],
         commit_type="fix",
@@ -749,6 +750,86 @@ def test_review_group_retries_commit_message_suggestion(monkeypatch):
     assert group.message == "fix(commit): add retry option"
     assert len(calls) == 2
     assert calls == [False, True]
+
+
+def test_review_group_edits_scope_and_message_with_script_api(monkeypatch):
+    answers = iter(["scope", "message", "y"])
+    asked_scopes: list[tuple[str, str | None]] = []
+    asked_messages: list[tuple[str, str | None]] = []
+
+    monkeypatch.setattr(
+        commit_workflow,
+        "_build_review_message",
+        lambda group, console, retry=False: f"fix({group.scope or 'none'}): suggested",
+    )
+    monkeypatch.setattr(
+        commit_workflow,
+        "choose",
+        lambda prompt, choices, default=None: next(answers),
+    )
+
+    def fake_ask(prompt: str, default: str | None = None) -> str:
+        if prompt == "Scope":
+            asked_scopes.append((prompt, default))
+            return "chat"
+        asked_messages.append((prompt, default))
+        return "fix(chat): custom message"
+
+    monkeypatch.setattr(commit_workflow, "ask", fake_ask)
+    group = CommitGroup(
+        files=[ChangedFile("dori/chat.py", "modified")],
+        commit_type="fix",
+        scope="",
+    )
+    output = StringIO()
+    console = commit_workflow.Console(
+        file=output, force_terminal=False, color_system=None
+    )
+
+    accepted = _review_group(group, 1, 1, console)
+
+    assert accepted is True
+    assert asked_scopes == [("Scope", "")]
+    assert asked_messages == [("Commit message", "fix(chat): suggested")]
+    assert group.scope == "chat"
+    assert group.message == "fix(chat): custom message"
+
+
+def test_run_interactive_uses_confirm_for_amend_prompt(monkeypatch):
+    monkeypatch.setattr(commit_workflow, "find_repo_root", lambda cwd=None: "/repo")
+    monkeypatch.setattr(
+        commit_workflow,
+        "scan_changes",
+        lambda repo_root: (
+            [ChangedFile("dori/chat.py", "modified")],
+            ["fix(dori): previous subject"],
+        ),
+    )
+    monkeypatch.setattr(commit_workflow, "group_files", lambda files: [files])
+    monkeypatch.setattr(commit_workflow, "detect_type", lambda files: "fix")
+    monkeypatch.setattr(commit_workflow, "detect_scope", lambda files: "dori")
+    monkeypatch.setattr(
+        commit_workflow, "is_last_commit_pushed", lambda repo_root: False
+    )
+    monkeypatch.setattr(commit_workflow, "_review_group", lambda *args, **kwargs: False)
+    asked: list[tuple[str, bool]] = []
+
+    def fake_confirm(prompt: str, default: bool = False) -> bool:
+        asked.append((prompt, default))
+        return True
+
+    monkeypatch.setattr(commit_workflow, "confirm", fake_confirm)
+    output = StringIO()
+    console = commit_workflow.Console(
+        file=output, force_terminal=False, color_system=None
+    )
+
+    result = commit_workflow.run_interactive(console=console)
+
+    assert result == 0
+    assert asked == [
+        ("Last commit was 'fix(dori): previous subject'. Amend it?", False)
+    ]
 
 
 def test_commit_group_stages_selected_files_and_commits(monkeypatch):
