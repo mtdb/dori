@@ -163,9 +163,37 @@ class _PendingLineStream:
         self._release.set()
 
 
+class _PendingBurstStream:
+    def __init__(self, lines: list[str]):
+        self._lines = [f"{line}\n".encode() for line in lines]
+        self._release = asyncio.Event()
+        self._started = asyncio.Event()
+
+    async def readline(self) -> bytes:
+        self._started.set()
+        await self._release.wait()
+        if not self._lines:
+            return b""
+        return self._lines.pop(0)
+
+    def has_pending_data(self) -> bool:
+        return bool(self._lines)
+
+    async def wait_until_reading(self) -> None:
+        await self._started.wait()
+
+    def release_burst(self) -> None:
+        self._release.set()
+
+
 async def _release_stream_after_delay(stream: _PendingLineStream) -> None:
     await asyncio.sleep(0.08)
     stream.release_line()
+
+
+async def _release_burst_after_delay(stream: _PendingBurstStream) -> None:
+    await asyncio.sleep(0.08)
+    stream.release_burst()
 
 
 def test_runner_waits_for_stdout_quiescence_before_request_boundary(monkeypatch):
@@ -205,6 +233,62 @@ def test_runner_waits_for_stdout_quiescence_before_request_boundary(monkeypatch)
             boundary = await runner.next_boundary()
             assert boundary == WorkflowBoundary(
                 output="before name",
+                request=request,
+                returncode=None,
+                error=None,
+            )
+            await release_task
+        finally:
+            await runner.close()
+
+    asyncio.run(scenario())
+
+
+def test_runner_flushes_pending_stdout_burst_before_request_boundary(monkeypatch):
+    request = InteractionRequest(1, "ask", "Name")
+    stopped = asyncio.Event()
+
+    class FakeProcess:
+        def __init__(self, stdout):
+            self.stdout = stdout
+            self.stderr = None
+            self.returncode = None
+
+        async def wait(self):
+            await stopped.wait()
+            return self.returncode or 0
+
+        def terminate(self):
+            self.returncode = -15
+            stopped.set()
+
+        def kill(self):
+            self.returncode = -9
+            stopped.set()
+
+    async def scenario():
+        original_update = WorkflowRunner._update_stream_state
+
+        async def yielding_update(self, stream_name, **kwargs):
+            await original_update(self, stream_name, **kwargs)
+            if kwargs.get("output_generated"):
+                await asyncio.sleep(0)
+
+        monkeypatch.setattr(WorkflowRunner, "_update_stream_state", yielding_update)
+        stdout = _PendingBurstStream(["line 1", "line 2"])
+        process = FakeProcess(stdout)
+        runner = WorkflowRunner(
+            process=process,
+            request_read_fd=None,
+            response_write_fd=None,
+        )
+        try:
+            await stdout.wait_until_reading()
+            await runner._request_queue.put(request)
+            release_task = asyncio.create_task(_release_burst_after_delay(stdout))
+            boundary = await runner.next_boundary()
+            assert boundary == WorkflowBoundary(
+                output="line 1\nline 2",
                 request=request,
                 returncode=None,
                 error=None,

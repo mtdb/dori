@@ -432,9 +432,10 @@ class WorkflowRunner:
                     )
                     return
                 buffer.append(line.decode("utf-8").rstrip("\n"))
+                keep_reading = self._stream_has_pending_data(stream_name)
                 await self._update_stream_state(
                     stream_name,
-                    reading=False,
+                    reading=keep_reading,
                     output_generated=True,
                 )
         except asyncio.CancelledError:
