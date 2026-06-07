@@ -86,3 +86,9 @@ yaml_version = "2.0.0"
 markers = [
     "integration: tests that call external/local services such as Ollama",
 ]
+
+[dependency-groups]
+dev = [
+    "build (>=1.5.0,<2.0.0)",
+    "twine (>=6.2.0,<7.0.0)"
+]
