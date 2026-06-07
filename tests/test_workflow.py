@@ -136,15 +136,46 @@ def _write_script(tmp_path, source: str):
     return script_path
 
 
+class _PendingLineStream:
+    def __init__(self, line: str):
+        self._line = f"{line}\n".encode()
+        self._pending_data = True
+        self._release = asyncio.Event()
+        self._started = asyncio.Event()
+        self._delivered = False
+
+    async def readline(self) -> bytes:
+        self._started.set()
+        await self._release.wait()
+        if self._delivered:
+            return b""
+        self._delivered = True
+        self._pending_data = False
+        return self._line
+
+    def has_pending_data(self) -> bool:
+        return self._pending_data
+
+    async def wait_until_reading(self) -> None:
+        await self._started.wait()
+
+    def release_line(self) -> None:
+        self._release.set()
+
+
+async def _release_stream_after_delay(stream: _PendingLineStream) -> None:
+    await asyncio.sleep(0.08)
+    stream.release_line()
+
+
 def test_runner_waits_for_stdout_quiescence_before_request_boundary(monkeypatch):
     request = InteractionRequest(1, "ask", "Name")
-    ready = asyncio.Event()
     stopped = asyncio.Event()
 
     class FakeProcess:
-        def __init__(self):
-            self.stdout = object()
-            self.stderr = object()
+        def __init__(self, stdout):
+            self.stdout = stdout
+            self.stderr = None
             self.returncode = None
 
         async def wait(self):
@@ -160,31 +191,17 @@ def test_runner_waits_for_stdout_quiescence_before_request_boundary(monkeypatch)
             stopped.set()
 
     async def scenario():
-        async def fake_drain(self, stream_name, stream, buffer):
-            if stream_name == "stdout":
-                await self._update_stream_state(stream_name, idle=False)
-                ready.set()
-                await asyncio.sleep(0.08)
-                buffer.append("before name")
-                await self._update_stream_state(
-                    stream_name,
-                    idle=False,
-                    output_generated=True,
-                )
-                await self._update_stream_state(stream_name, idle=True, done=True)
-                return
-            await self._update_stream_state(stream_name, idle=True, done=True)
-
-        monkeypatch.setattr(WorkflowRunner, "_drain_stream", fake_drain)
-        process = FakeProcess()
+        stdout = _PendingLineStream("before name")
+        process = FakeProcess(stdout)
         runner = WorkflowRunner(
             process=process,
             request_read_fd=None,
             response_write_fd=None,
         )
         try:
-            await ready.wait()
+            await stdout.wait_until_reading()
             await runner._request_queue.put(request)
+            release_task = asyncio.create_task(_release_stream_after_delay(stdout))
             boundary = await runner.next_boundary()
             assert boundary == WorkflowBoundary(
                 output="before name",
@@ -192,6 +209,7 @@ def test_runner_waits_for_stdout_quiescence_before_request_boundary(monkeypatch)
                 returncode=None,
                 error=None,
             )
+            await release_task
         finally:
             await runner.close()
 
@@ -202,9 +220,9 @@ def test_runner_waits_for_stdout_quiescence_before_exit_boundary(monkeypatch):
     stopped = asyncio.Event()
 
     class FakeProcess:
-        def __init__(self):
-            self.stdout = object()
-            self.stderr = object()
+        def __init__(self, stdout):
+            self.stdout = stdout
+            self.stderr = None
             self.returncode = None
 
         async def wait(self):
@@ -222,28 +240,16 @@ def test_runner_waits_for_stdout_quiescence_before_exit_boundary(monkeypatch):
             stopped.set()
 
     async def scenario():
-        async def fake_drain(self, stream_name, stream, buffer):
-            if stream_name == "stdout":
-                await self._update_stream_state(stream_name, idle=False)
-                await asyncio.sleep(0.08)
-                buffer.append("done")
-                await self._update_stream_state(
-                    stream_name,
-                    idle=False,
-                    output_generated=True,
-                )
-                await self._update_stream_state(stream_name, idle=True, done=True)
-                return
-            await self._update_stream_state(stream_name, idle=True, done=True)
-
-        monkeypatch.setattr(WorkflowRunner, "_drain_stream", fake_drain)
-        process = FakeProcess()
+        stdout = _PendingLineStream("done")
+        process = FakeProcess(stdout)
         runner = WorkflowRunner(
             process=process,
             request_read_fd=None,
             response_write_fd=None,
         )
         try:
+            await stdout.wait_until_reading()
+            release_task = asyncio.create_task(_release_stream_after_delay(stdout))
             boundary = await runner.next_boundary()
             assert boundary == WorkflowBoundary(
                 output="done",
@@ -251,6 +257,7 @@ def test_runner_waits_for_stdout_quiescence_before_exit_boundary(monkeypatch):
                 returncode=0,
                 error=None,
             )
+            await release_task
         finally:
             await runner.close()
 

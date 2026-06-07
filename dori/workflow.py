@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import select
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -173,9 +174,13 @@ class WorkflowRunner:
         )
         self._output_condition = asyncio.Condition()
         self._output_generation = 0
-        self._stream_idle = {
-            "stdout": self._process.stdout is None,
-            "stderr": self._process.stderr is None,
+        self._streams = {
+            "stdout": self._process.stdout,
+            "stderr": self._process.stderr,
+        }
+        self._stream_reading = {
+            "stdout": False,
+            "stderr": False,
         }
         self._stream_done = {
             "stdout": self._process.stdout is None,
@@ -417,15 +422,19 @@ class WorkflowRunner:
 
         try:
             while True:
-                await self._update_stream_state(stream_name, idle=True)
+                await self._update_stream_state(stream_name, reading=True)
                 line = await stream.readline()
                 if not line:
-                    await self._update_stream_state(stream_name, done=True, idle=True)
+                    await self._update_stream_state(
+                        stream_name,
+                        reading=False,
+                        done=True,
+                    )
                     return
                 buffer.append(line.decode("utf-8").rstrip("\n"))
                 await self._update_stream_state(
                     stream_name,
-                    idle=False,
+                    reading=False,
                     output_generated=True,
                 )
         except asyncio.CancelledError:
@@ -436,7 +445,7 @@ class WorkflowRunner:
             observed_generation = self._output_generation
             while True:
                 if (
-                    self._streams_are_idle()
+                    self._streams_are_quiescent()
                     and self._output_generation == observed_generation
                 ):
                     return
@@ -495,24 +504,47 @@ class WorkflowRunner:
         self,
         stream_name: str,
         *,
-        idle: bool | None = None,
+        reading: bool | None = None,
         done: bool | None = None,
         output_generated: bool = False,
     ) -> None:
         async with self._output_condition:
-            if idle is not None:
-                self._stream_idle[stream_name] = idle
+            if reading is not None:
+                self._stream_reading[stream_name] = reading
             if done is not None:
                 self._stream_done[stream_name] = done
             if output_generated:
                 self._output_generation += 1
             self._output_condition.notify_all()
 
-    def _streams_are_idle(self) -> bool:
+    def _streams_are_quiescent(self) -> bool:
         return all(
-            self._stream_idle[stream_name] or self._stream_done[stream_name]
-            for stream_name in self._stream_idle
+            self._stream_done[stream_name]
+            or not (
+                self._stream_reading[stream_name]
+                and self._stream_has_pending_data(stream_name)
+            )
+            for stream_name in self._streams
         )
+
+    def _stream_has_pending_data(self, stream_name: str) -> bool:
+        stream = self._streams[stream_name]
+        if stream is None:
+            return False
+
+        has_pending_data = getattr(stream, "has_pending_data", None)
+        if callable(has_pending_data):
+            return bool(has_pending_data())
+
+        transport = getattr(stream, "_transport", None)
+        if transport is None:
+            return False
+        pipe = transport.get_extra_info("pipe")
+        if pipe is None:
+            return False
+
+        readable, _, _ = select.select([pipe], [], [], 0)
+        return bool(readable)
 
 
 def _read_fd_line(fd: int) -> bytes | None:
