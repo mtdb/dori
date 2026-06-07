@@ -89,7 +89,7 @@ By default, Dori uses `llama3.1:8b`.
 1. Install:
 
 ```bash
-pip install -e .
+pip install dori
 ```
 
 2. Initialize runtime files:
@@ -115,7 +115,7 @@ dori --prompt "Summarize my open tasks"
 For a global CLI install, prefer `pipx`:
 
 ```bash
-pipx install .
+pipx install dori
 ```
 
 To track local development changes:
@@ -127,7 +127,13 @@ pipx install -e .
 Alternative with user-local `pip`:
 
 ```bash
-python3 -m pip install --user .
+python3 -m pip install --user dori
+```
+
+For local development from a cloned repository:
+
+```bash
+pip install -e .
 ```
 
 ## Runtime Layout
