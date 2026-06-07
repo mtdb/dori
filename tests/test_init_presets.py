@@ -179,33 +179,6 @@ def test_update_workspace_preserves_user_modified_file(tmp_path, monkeypatch, ca
     assert "not updated because it has local modifications" in capsys.readouterr().out
 
 
-def test_update_workspace_migrates_legacy_dori_persona_without_overwriting_changes(
-    tmp_path, monkeypatch
-):
-    monkeypatch.setenv("HOME", str(tmp_path))
-    runtime_home = tmp_path / ".dori"
-    runtime_home.mkdir()
-
-    legacy_content = "You are a custom legacy persona.\n"
-    legacy_path = runtime_home / "AGENTS.md"
-    legacy_path.write_text(legacy_content, encoding="utf-8")
-
-    manifest_path = runtime_home / ".manifest.json"
-    legacy_hash = hashlib.md5(b"old packaged content\n").hexdigest()  # noqa: S324
-    manifest_path.write_text(
-        json.dumps({"AGENTS.md": legacy_hash}, indent=2, sort_keys=True),
-        encoding="utf-8",
-    )
-
-    update_workspace(str(ROOT))
-
-    dori_path = runtime_home / "DORI.md"
-    assert dori_path.read_text(encoding="utf-8") == legacy_content
-    updated_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    assert updated_manifest["DORI.md"] == legacy_hash
-    assert "AGENTS.md" not in updated_manifest
-
-
 def test_update_workspace_recreates_missing_and_new_files(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path))
     runtime_home = tmp_path / ".dori"

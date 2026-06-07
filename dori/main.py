@@ -9,11 +9,7 @@ from rich.console import Console
 from rich.markup import escape
 
 from dori.chat import ConversationEngine
-from dori.commands import (
-    init_workspace,
-    migrate_legacy_persona_file,
-    update_workspace,
-)
+from dori.commands import init_workspace, update_workspace
 from dori.loader import (
     get_runtime_home,
     load_agents,
@@ -90,16 +86,14 @@ def run():
         sys.exit(1)
 
     try:
-        migrate_legacy_persona_file(runtime_home)
-
-        # Step 2: Search for DORI.md
+        # Step 1: Search for DORI.md
         agents_content = load_agents()
 
-        # Step 3: Search for skills/
+        # Step 2: Search for skills/
         skills = load_skills()
         available_vram_mib, total_vram_mib = load_available_vram()
 
-        # Step 4: Initialize RuntimeState
+        # Step 3: Initialize RuntimeState
         state = RuntimeState(
             cwd=cwd,
             agents_content=agents_content,
@@ -115,7 +109,7 @@ def run():
             # Inline mode: single turn, print response to stdout, no TUI.
             _run_inline(state, args.prompt.strip())
         else:
-            # Step 5: Start TUI interface
+            # Step 4: Start TUI interface
             start_tui(state)
 
     except Exception as e:

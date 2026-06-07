@@ -25,7 +25,6 @@ LEGACY_SEARCH_PATHS = {
 }
 MANIFEST_PATH = Path(".manifest.json")
 PERSONA_FILENAME = "DORI.md"
-LEGACY_PERSONA_FILENAME = "AGENTS.md"
 
 
 def _resolve_boilerplate_dir(cwd: str) -> tuple[Path, Path, bool]:
@@ -81,34 +80,6 @@ def _write_manifest(runtime_home: Path, manifest: dict[str, str]) -> None:
 
 def _relative_runtime_path(path: Path, runtime_home: Path) -> str:
     return path.relative_to(runtime_home).as_posix()
-
-
-def migrate_legacy_persona_file(
-    runtime_home: Path, manifest: dict[str, str] | None = None
-) -> bool:
-    """Copy legacy AGENTS.md content into DORI.md when upgrading older installs."""
-    persona_path = runtime_home / PERSONA_FILENAME
-    legacy_path = runtime_home / LEGACY_PERSONA_FILENAME
-
-    if persona_path.is_file():
-        if manifest is not None and LEGACY_PERSONA_FILENAME in manifest:
-            manifest[PERSONA_FILENAME] = manifest.pop(LEGACY_PERSONA_FILENAME)
-        return False
-
-    if not legacy_path.is_file():
-        return False
-
-    persona_path.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(legacy_path, persona_path)
-    console.print(f"[green]Migrated[/green] {legacy_path.name} -> {persona_path.name}")
-
-    if manifest is not None:
-        if LEGACY_PERSONA_FILENAME in manifest:
-            manifest[PERSONA_FILENAME] = manifest.pop(LEGACY_PERSONA_FILENAME)
-        else:
-            manifest[PERSONA_FILENAME] = _compute_md5(persona_path)
-
-    return True
 
 
 def _normalize_reminders_backend(reminders_backend: str | None) -> str | None:
@@ -583,7 +554,6 @@ def update_workspace(
         )
 
     manifest = _load_manifest(runtime_home)
-    migrate_legacy_persona_file(runtime_home, manifest)
     detected_search_backend = _detect_existing_search_backend(
         boilerplate_dir, runtime_home, manifest
     )
