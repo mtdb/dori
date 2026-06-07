@@ -14,7 +14,6 @@ _REQUEST_FD_ENV = "DORI_INTERACTION_REQUEST_FD"
 _RESPONSE_FD_ENV = "DORI_INTERACTION_RESPONSE_FD"
 _DISABLED_ENV = "DORI_INTERACTION_DISABLED"
 _REQUEST_ERROR = "Script emitted malformed interaction JSON."
-_OUTPUT_SETTLE_TIMEOUT = 0.05
 _CANCEL_GRACE_TIMEOUT = 0.2
 
 
@@ -172,13 +171,23 @@ class WorkflowRunner:
         self._request_queue: asyncio.Queue[InteractionRequest | _ProtocolError] = (
             asyncio.Queue()
         )
+        self._output_condition = asyncio.Condition()
+        self._output_generation = 0
+        self._stream_idle = {
+            "stdout": self._process.stdout is None,
+            "stderr": self._process.stderr is None,
+        }
+        self._stream_done = {
+            "stdout": self._process.stdout is None,
+            "stderr": self._process.stderr is None,
+        }
         self._pending_request: InteractionRequest | None = None
         self._closed = False
         self._stdout_task = asyncio.create_task(
-            self._drain_stream(self._process.stdout, self._stdout_buffer)
+            self._drain_stream("stdout", self._process.stdout, self._stdout_buffer)
         )
         self._stderr_task = asyncio.create_task(
-            self._drain_stream(self._process.stderr, self._stderr_buffer)
+            self._drain_stream("stderr", self._process.stderr, self._stderr_buffer)
         )
         self._request_task = (
             asyncio.create_task(self._pump_requests())
@@ -399,6 +408,7 @@ class WorkflowRunner:
 
     async def _drain_stream(
         self,
+        stream_name: str,
         stream: asyncio.StreamReader | None,
         buffer: list[str],
     ) -> None:
@@ -407,17 +417,31 @@ class WorkflowRunner:
 
         try:
             while True:
+                await self._update_stream_state(stream_name, idle=True)
                 line = await stream.readline()
                 if not line:
+                    await self._update_stream_state(stream_name, done=True, idle=True)
                     return
                 buffer.append(line.decode("utf-8").rstrip("\n"))
+                await self._update_stream_state(
+                    stream_name,
+                    idle=False,
+                    output_generated=True,
+                )
         except asyncio.CancelledError:
             raise
 
     async def _settle_output(self) -> None:
-        if self._stdout_task.done() and self._stderr_task.done():
-            return
-        await asyncio.sleep(_OUTPUT_SETTLE_TIMEOUT)
+        async with self._output_condition:
+            observed_generation = self._output_generation
+            while True:
+                if (
+                    self._streams_are_idle()
+                    and self._output_generation == observed_generation
+                ):
+                    return
+                await self._output_condition.wait()
+                observed_generation = self._output_generation
 
     async def _wait_for_process_exit(self, timeout: float) -> bool:
         if self._process.returncode is not None:
@@ -466,6 +490,29 @@ class WorkflowRunner:
         except TimeoutError:
             self._process.kill()
             await self._process.wait()
+
+    async def _update_stream_state(
+        self,
+        stream_name: str,
+        *,
+        idle: bool | None = None,
+        done: bool | None = None,
+        output_generated: bool = False,
+    ) -> None:
+        async with self._output_condition:
+            if idle is not None:
+                self._stream_idle[stream_name] = idle
+            if done is not None:
+                self._stream_done[stream_name] = done
+            if output_generated:
+                self._output_generation += 1
+            self._output_condition.notify_all()
+
+    def _streams_are_idle(self) -> bool:
+        return all(
+            self._stream_idle[stream_name] or self._stream_done[stream_name]
+            for stream_name in self._stream_idle
+        )
 
 
 def _read_fd_line(fd: int) -> bytes | None:

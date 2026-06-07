@@ -136,7 +136,7 @@ def _write_script(tmp_path, source: str):
     return script_path
 
 
-def test_runner_waits_for_stdout_before_request_boundary(monkeypatch):
+def test_runner_waits_for_stdout_quiescence_before_request_boundary(monkeypatch):
     request = InteractionRequest(1, "ask", "Name")
     ready = asyncio.Event()
     stopped = asyncio.Event()
@@ -159,22 +159,32 @@ def test_runner_waits_for_stdout_before_request_boundary(monkeypatch):
             self.returncode = -9
             stopped.set()
 
-    async def fake_drain(self, stream, buffer):
-        if stream is self._process.stdout:
-            await ready.wait()
-            await asyncio.sleep(0.02)
-            buffer.append("before name")
-
     async def scenario():
+        async def fake_drain(self, stream_name, stream, buffer):
+            if stream_name == "stdout":
+                await self._update_stream_state(stream_name, idle=False)
+                ready.set()
+                await asyncio.sleep(0.08)
+                buffer.append("before name")
+                await self._update_stream_state(
+                    stream_name,
+                    idle=False,
+                    output_generated=True,
+                )
+                await self._update_stream_state(stream_name, idle=True, done=True)
+                return
+            await self._update_stream_state(stream_name, idle=True, done=True)
+
         monkeypatch.setattr(WorkflowRunner, "_drain_stream", fake_drain)
+        process = FakeProcess()
         runner = WorkflowRunner(
-            process=FakeProcess(),
+            process=process,
             request_read_fd=None,
             response_write_fd=None,
         )
-        await runner._request_queue.put(request)
-        ready.set()
         try:
+            await ready.wait()
+            await runner._request_queue.put(request)
             boundary = await runner.next_boundary()
             assert boundary == WorkflowBoundary(
                 output="before name",
@@ -188,9 +198,7 @@ def test_runner_waits_for_stdout_before_request_boundary(monkeypatch):
     asyncio.run(scenario())
 
 
-def test_runner_waits_for_stdout_before_exit_boundary(monkeypatch):
-    release_output = asyncio.Event()
-    wait_called = asyncio.Event()
+def test_runner_waits_for_stdout_quiescence_before_exit_boundary(monkeypatch):
     stopped = asyncio.Event()
 
     class FakeProcess:
@@ -200,7 +208,6 @@ def test_runner_waits_for_stdout_before_exit_boundary(monkeypatch):
             self.returncode = None
 
         async def wait(self):
-            wait_called.set()
             if self.returncode is None:
                 self.returncode = 0
             stopped.set()
@@ -214,21 +221,28 @@ def test_runner_waits_for_stdout_before_exit_boundary(monkeypatch):
             self.returncode = -9
             stopped.set()
 
-    async def fake_drain(self, stream, buffer):
-        if stream is self._process.stdout:
-            await wait_called.wait()
-            await release_output.wait()
-            await asyncio.sleep(0.02)
-            buffer.append("done")
-
     async def scenario():
+        async def fake_drain(self, stream_name, stream, buffer):
+            if stream_name == "stdout":
+                await self._update_stream_state(stream_name, idle=False)
+                await asyncio.sleep(0.08)
+                buffer.append("done")
+                await self._update_stream_state(
+                    stream_name,
+                    idle=False,
+                    output_generated=True,
+                )
+                await self._update_stream_state(stream_name, idle=True, done=True)
+                return
+            await self._update_stream_state(stream_name, idle=True, done=True)
+
         monkeypatch.setattr(WorkflowRunner, "_drain_stream", fake_drain)
+        process = FakeProcess()
         runner = WorkflowRunner(
-            process=FakeProcess(),
+            process=process,
             request_read_fd=None,
             response_write_fd=None,
         )
-        release_output.set()
         try:
             boundary = await runner.next_boundary()
             assert boundary == WorkflowBoundary(
