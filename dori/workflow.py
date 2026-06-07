@@ -14,6 +14,8 @@ _REQUEST_FD_ENV = "DORI_INTERACTION_REQUEST_FD"
 _RESPONSE_FD_ENV = "DORI_INTERACTION_RESPONSE_FD"
 _DISABLED_ENV = "DORI_INTERACTION_DISABLED"
 _REQUEST_ERROR = "Script emitted malformed interaction JSON."
+_OUTPUT_SETTLE_TIMEOUT = 0.05
+_CANCEL_GRACE_TIMEOUT = 0.2
 
 
 class InvalidInteractionAnswer(ValueError):  # noqa: N818
@@ -203,17 +205,25 @@ class WorkflowRunner:
         response_read_fd: int | None = None
         response_write_fd: int | None = None
         pass_fds: tuple[int, ...] = ()
+        created_fds: list[int] = []
 
         if interaction_enabled:
             request_read_fd, request_write_fd = os.pipe()
             response_read_fd, response_write_fd = os.pipe()
+            created_fds.extend(
+                [
+                    request_read_fd,
+                    request_write_fd,
+                    response_read_fd,
+                    response_write_fd,
+                ]
+            )
             env[_REQUEST_FD_ENV] = str(request_write_fd)
             env[_RESPONSE_FD_ENV] = str(response_read_fd)
             pass_fds = (request_write_fd, response_read_fd)
         else:
             env[_DISABLED_ENV] = "1"
 
-        process = None
         try:
             process = await asyncio.create_subprocess_exec(
                 sys.executable,
@@ -225,10 +235,14 @@ class WorkflowRunner:
                 stderr=asyncio.subprocess.PIPE,
                 pass_fds=pass_fds,
             )
-        finally:
-            for fd in (request_write_fd, response_read_fd):
-                if fd is not None:
-                    os.close(fd)
+        except Exception:
+            for fd in created_fds:
+                _close_fd(fd)
+            raise
+
+        for fd in (request_write_fd, response_read_fd):
+            if fd is not None:
+                _close_fd(fd)
 
         return cls(
             process=process,
@@ -246,6 +260,7 @@ class WorkflowRunner:
             )
 
         if self._process.returncode is not None:
+            await self._settle_output()
             return WorkflowBoundary(
                 output=self._flush_output_buffer(),
                 request=None,
@@ -268,7 +283,7 @@ class WorkflowRunner:
                 return await self._finish_with_protocol_error(str(item))
 
             self._pending_request = item
-            await asyncio.sleep(0)
+            await self._settle_output()
             return WorkflowBoundary(
                 output=self._flush_output_buffer(),
                 request=item,
@@ -276,7 +291,7 @@ class WorkflowRunner:
                 error=None,
             )
 
-        await asyncio.sleep(0)
+        await self._settle_output()
         return WorkflowBoundary(
             output=self._flush_output_buffer(),
             request=None,
@@ -318,11 +333,22 @@ class WorkflowRunner:
                         "cancelled": True,
                     }
                 )
+                exited = await self._wait_for_process_exit(_CANCEL_GRACE_TIMEOUT)
+                if exited:
+                    self._pending_request = None
+                    await self._settle_output()
+                    return WorkflowBoundary(
+                        output=self._flush_output_buffer(),
+                        request=None,
+                        returncode=self._process.returncode,
+                        error="Workflow cancelled.",
+                    )
             except OSError:
                 pass
 
         await self._terminate_process()
         self._pending_request = None
+        await self._settle_output()
         return WorkflowBoundary(
             output=self._flush_output_buffer(),
             request=None,
@@ -341,10 +367,7 @@ class WorkflowRunner:
         for fd_name in ("_request_read_fd", "_response_write_fd"):
             fd = getattr(self, fd_name)
             if fd is not None:
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
+                _close_fd(fd)
                 setattr(self, fd_name, None)
 
         tasks = [self._stdout_task, self._stderr_task]
@@ -391,6 +414,20 @@ class WorkflowRunner:
         except asyncio.CancelledError:
             raise
 
+    async def _settle_output(self) -> None:
+        if self._stdout_task.done() and self._stderr_task.done():
+            return
+        await asyncio.sleep(_OUTPUT_SETTLE_TIMEOUT)
+
+    async def _wait_for_process_exit(self, timeout: float) -> bool:
+        if self._process.returncode is not None:
+            return True
+        try:
+            await asyncio.wait_for(self._process.wait(), timeout=timeout)
+        except TimeoutError:
+            return False
+        return True
+
     def _flush_output_buffer(self) -> str:
         output = "\n".join(self._stdout_buffer)
         self._stdout_buffer.clear()
@@ -411,6 +448,7 @@ class WorkflowRunner:
 
     async def _finish_with_protocol_error(self, message: str) -> WorkflowBoundary:
         await self._terminate_process()
+        await self._settle_output()
         return WorkflowBoundary(
             output=self._flush_output_buffer(),
             request=None,
@@ -424,7 +462,7 @@ class WorkflowRunner:
 
         self._process.terminate()
         try:
-            await asyncio.wait_for(self._process.wait(), timeout=0.2)
+            await asyncio.wait_for(self._process.wait(), timeout=_CANCEL_GRACE_TIMEOUT)
         except TimeoutError:
             self._process.kill()
             await self._process.wait()
@@ -448,6 +486,13 @@ def _write_all(fd: int, data: bytes) -> None:
         if written <= 0:
             raise OSError("short write")
         total_written += written
+
+
+def _close_fd(fd: int) -> None:
+    try:
+        os.close(fd)
+    except OSError:
+        pass
 
 
 def _build_pythonpath(existing: str | None) -> str:

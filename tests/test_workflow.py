@@ -136,6 +136,113 @@ def _write_script(tmp_path, source: str):
     return script_path
 
 
+def test_runner_waits_for_stdout_before_request_boundary(monkeypatch):
+    request = InteractionRequest(1, "ask", "Name")
+    ready = asyncio.Event()
+    stopped = asyncio.Event()
+
+    class FakeProcess:
+        def __init__(self):
+            self.stdout = object()
+            self.stderr = object()
+            self.returncode = None
+
+        async def wait(self):
+            await stopped.wait()
+            return self.returncode or 0
+
+        def terminate(self):
+            self.returncode = -15
+            stopped.set()
+
+        def kill(self):
+            self.returncode = -9
+            stopped.set()
+
+    async def fake_drain(self, stream, buffer):
+        if stream is self._process.stdout:
+            await ready.wait()
+            await asyncio.sleep(0.02)
+            buffer.append("before name")
+
+    async def scenario():
+        monkeypatch.setattr(WorkflowRunner, "_drain_stream", fake_drain)
+        runner = WorkflowRunner(
+            process=FakeProcess(),
+            request_read_fd=None,
+            response_write_fd=None,
+        )
+        await runner._request_queue.put(request)
+        ready.set()
+        try:
+            boundary = await runner.next_boundary()
+            assert boundary == WorkflowBoundary(
+                output="before name",
+                request=request,
+                returncode=None,
+                error=None,
+            )
+        finally:
+            await runner.close()
+
+    asyncio.run(scenario())
+
+
+def test_runner_waits_for_stdout_before_exit_boundary(monkeypatch):
+    release_output = asyncio.Event()
+    wait_called = asyncio.Event()
+    stopped = asyncio.Event()
+
+    class FakeProcess:
+        def __init__(self):
+            self.stdout = object()
+            self.stderr = object()
+            self.returncode = None
+
+        async def wait(self):
+            wait_called.set()
+            if self.returncode is None:
+                self.returncode = 0
+            stopped.set()
+            return self.returncode
+
+        def terminate(self):
+            self.returncode = -15
+            stopped.set()
+
+        def kill(self):
+            self.returncode = -9
+            stopped.set()
+
+    async def fake_drain(self, stream, buffer):
+        if stream is self._process.stdout:
+            await wait_called.wait()
+            await release_output.wait()
+            await asyncio.sleep(0.02)
+            buffer.append("done")
+
+    async def scenario():
+        monkeypatch.setattr(WorkflowRunner, "_drain_stream", fake_drain)
+        runner = WorkflowRunner(
+            process=FakeProcess(),
+            request_read_fd=None,
+            response_write_fd=None,
+        )
+        release_output.set()
+        try:
+            boundary = await runner.next_boundary()
+            assert boundary == WorkflowBoundary(
+                output="done",
+                request=None,
+                returncode=0,
+                error=None,
+            )
+        finally:
+            await runner.close()
+
+    asyncio.run(scenario())
+
+
 def test_runner_pauses_and_resumes_with_buffered_output(tmp_path):
     script_path = _write_script(
         tmp_path,
@@ -176,6 +283,26 @@ def test_runner_pauses_and_resumes_with_buffered_output(tmp_path):
             await runner.close()
 
     asyncio.run(scenario())
+
+
+def test_runner_closes_all_pipe_fds_when_startup_fails(monkeypatch, tmp_path):
+    closed_fds = []
+    pipe_pairs = [(11, 12), (13, 14)]
+
+    async def fail_spawn(*args, **kwargs):
+        raise OSError("spawn failed")
+
+    monkeypatch.setattr("dori.workflow.os.pipe", lambda: pipe_pairs.pop(0))
+    monkeypatch.setattr("dori.workflow._close_fd", closed_fds.append)
+    monkeypatch.setattr("dori.workflow.asyncio.create_subprocess_exec", fail_spawn)
+
+    async def scenario():
+        with pytest.raises(OSError, match="spawn failed"):
+            await WorkflowRunner.start(tmp_path / "missing.py", {}, cwd=tmp_path)
+
+    asyncio.run(scenario())
+
+    assert closed_fds == [11, 12, 13, 14]
 
 
 def test_runner_forwards_payload_as_json_argv(tmp_path):
@@ -307,6 +434,39 @@ def test_runner_cancel_reaps_process_and_returns_cancellation_boundary(tmp_path)
             assert cancelled.request is None
             assert cancelled.returncode is not None
             assert cancelled.error == "Workflow cancelled."
+        finally:
+            await runner.close()
+
+    asyncio.run(scenario())
+
+
+def test_runner_cancel_allows_graceful_script_cleanup(tmp_path):
+    script_path = _write_script(
+        tmp_path,
+        """
+        from dori.script import InteractionCancelled, ask
+
+        print("waiting", flush=True)
+        try:
+            ask("Name")
+        except InteractionCancelled:
+            print("cancelled cleanly", flush=True)
+        """,
+    )
+
+    async def scenario():
+        runner = await WorkflowRunner.start(script_path, {}, cwd=tmp_path)
+        try:
+            first = await runner.next_boundary()
+            assert first.request == InteractionRequest(1, "ask", "Name")
+
+            cancelled = await runner.cancel()
+            assert cancelled == WorkflowBoundary(
+                output="cancelled cleanly",
+                request=None,
+                returncode=0,
+                error="Workflow cancelled.",
+            )
         finally:
             await runner.close()
 
