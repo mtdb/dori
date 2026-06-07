@@ -10,7 +10,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from rich.console import Console
-from rich.prompt import Confirm, Prompt
+
+from dori.script import ask, choose, confirm
 
 ALL_TYPES = [
     "feat",
@@ -724,10 +725,9 @@ def run_interactive(
         if amend_qualifies(
             last_subject, groups[0].commit_type, groups[0].scope, pushed
         ):
-            groups[0].amend = Confirm.ask(
+            groups[0].amend = confirm(
                 f"Last commit was '{last_subject}'. Amend it?",
                 default=False,
-                console=console,
             )
 
     created: list[tuple[str, str]] = []
@@ -790,11 +790,10 @@ def _review_group(group: CommitGroup, index: int, total: int, console: Console) 
         console.print("\nSuggested commit message:", style="bold")
         console.print(group.message, highlight=False)
 
-        answer = Prompt.ask(
+        answer = choose(
             "Commit this group?",
-            choices=["y", "n", "type", "scope", "message", "retry", "r", "skip"],
+            ["y", "n", "type", "scope", "message", "retry", "skip"],
             default="y",
-            console=console,
         )
         if answer == "y":
             return True
@@ -803,12 +802,12 @@ def _review_group(group: CommitGroup, index: int, total: int, console: Console) 
         if answer == "type":
             group.commit_type = _ask_commit_type(console)
             group.message = _build_review_message(group, console)
-        if answer == "scope":
-            group.scope = Prompt.ask("Scope", default="", console=console).strip()
+        elif answer == "scope":
+            group.scope = ask("Scope", default=group.scope).strip()
             group.message = _build_review_message(group, console)
-        if answer == "message":
-            group.message = _read_multiline_message(console)
-        if answer in {"retry", "r"}:
+        elif answer == "message":
+            group.message = _ask_commit_message(group.message, console)
+        elif answer == "retry":
             group.message = _build_review_message(group, console, retry=True)
 
 
@@ -824,24 +823,9 @@ def _show_group(group: CommitGroup, index: int, total: int, console: Console) ->
 def _ask_commit_type(console: Console) -> str:
     for index, commit_type in enumerate(ALL_TYPES, 1):
         console.print(f"  {index}. {commit_type}")
-    while True:
-        answer = Prompt.ask("Commit type", console=console).strip()
-        if answer.isdigit() and 1 <= int(answer) <= len(ALL_TYPES):
-            return ALL_TYPES[int(answer) - 1]
-        if answer in ALL_TYPES:
-            return answer
-        console.print("Invalid type.", highlight=False)
+    return choose("Commit type", ALL_TYPES)
 
 
-def _read_multiline_message(console: Console) -> str:
-    console.print("Enter commit message. Finish with a line containing only '.'.")
-    lines: list[str] = []
-    while True:
-        line = sys.stdin.readline()
-        if line == "":
-            break
-        stripped = line.rstrip("\n")
-        if stripped == ".":
-            break
-        lines.append(stripped)
-    return "\n".join(lines).strip()
+def _ask_commit_message(current_message: str, console: Console) -> str:
+    console.print("Enter commit message.", highlight=False)
+    return ask("Commit message", default=current_message).strip()
