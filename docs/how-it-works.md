@@ -218,9 +218,13 @@ local Ollama model used by the DDGS preset.
 To add a leaf skill, create `~/.dori/skills/<name>.md`, define intent, field
 guidance, and JSON examples, then create `~/.dori/scripts/<name>.py`. The script
 should read `sys.argv[1]`, parse JSON, execute deterministically, and print a
-clear result. If you want the skill to be runnable as `dori <name>`, have the
-script accept the CLI payload form as well. Test the script directly, then test
-through `dori --prompt` and, if applicable, `dori <name>`.
+clear result. For multi-step workflows, import `ask()`, `confirm()`, and
+`choose()` from `dori.script` instead of reading directly from stdin. Those
+helpers work in the TUI chat and in direct `dori <name>` execution. They are
+disabled in `dori --prompt`, which should fail fast with a clear message. If you
+want the skill to be runnable as `dori <name>`, have the script accept the CLI
+payload form as well. Test the script directly, then test through chat and, if
+the skill is single-turn, through `dori --prompt`.
 
 To add a category, create `~/.dori/skills/<category>/_index.md`, add child
 skills in that directory, and create one flat script per child skill in

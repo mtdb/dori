@@ -151,6 +151,14 @@ if __name__ == "__main__":
 - **Exit with `sys.exit(1)`** on error, print a clear error message to stderr.
 - **Never leave side effects partially applied** — if the real implementation writes to a file or calls an API, do it atomically or roll back on failure.
 - **If the skill is command-shaped**, accept the `{"cli": true, ...}` payload and decide whether to run the full interactive workflow or a lightweight command response.
+- **If the skill needs follow-up input**, use the stable public API in `dori.script`:
+  `ask(prompt, default=None)`, `confirm(prompt, default=False)`, and
+  `choose(prompt, choices, default=None)`. These work in chat and in direct
+  `dori <skill>` execution. Do not read directly from stdin for follow-up
+  prompts.
+- **Treat `dori --prompt` as single-turn only**. Interactive scripts should
+  fail with a clear message telling the user to use the TUI chat or run the
+  skill directly.
 
 ---
 
