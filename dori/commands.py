@@ -28,7 +28,7 @@ PERSONA_FILENAME = "DORI.md"
 
 
 def _resolve_boilerplate_dir(cwd: str) -> tuple[Path, Path, bool]:
-    """Find boilerplate/ from cwd first, then fall back to the package repo root."""
+    """Find boilerplate/ from cwd first, then fall back to bundled copies."""
     requested_root = Path(cwd).expanduser().resolve()
     requested_boilerplate = requested_root / "boilerplate"
     if requested_boilerplate.is_dir():
@@ -38,6 +38,11 @@ def _resolve_boilerplate_dir(cwd: str) -> tuple[Path, Path, bool]:
     package_boilerplate = package_repo_root / "boilerplate"
     if package_boilerplate.is_dir():
         return package_repo_root, package_boilerplate, True
+
+    bundled_root = Path(__file__).resolve().parent
+    bundled_boilerplate = bundled_root / "boilerplate"
+    if bundled_boilerplate.is_dir():
+        return bundled_root, bundled_boilerplate, True
 
     return requested_root, requested_boilerplate, False
 
