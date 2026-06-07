@@ -171,6 +171,36 @@ def test_request_raises_for_mismatched_response_id(monkeypatch):
         os.close(response_write)
 
 
+def test_request_raises_for_unsupported_response_version(monkeypatch):
+    request_read, request_write = os.pipe()
+    response_read, response_write = os.pipe()
+    _set_channel_env(monkeypatch, request_write, response_read)
+
+    def reply():
+        request = json.loads(_read_request_line(request_read))
+        os.write(
+            response_write,
+            (
+                json.dumps({"version": 2, "id": request["id"], "answer": "ok"}) + "\n"
+            ).encode("utf-8"),
+        )
+
+    thread = threading.Thread(target=reply)
+    thread.start()
+
+    try:
+        with pytest.raises(
+            RuntimeError, match="unsupported interaction protocol version"
+        ):
+            ask("Name")
+    finally:
+        thread.join(timeout=5)
+        os.close(request_read)
+        os.close(request_write)
+        os.close(response_read)
+        os.close(response_write)
+
+
 def test_request_raises_for_malformed_json_response(monkeypatch):
     request_read, request_write = os.pipe()
     response_read, response_write = os.pipe()
