@@ -55,6 +55,13 @@ class CommitGroup:
     amend: bool = False
 
 
+@dataclass(frozen=True)
+class GroupingResult:
+    groups: tuple[tuple[ChangedFile, ...], ...]
+    certain: bool
+    reasons: tuple[str, ...] = ()
+
+
 @dataclass
 class CommandResult:
     returncode: int
@@ -147,91 +154,163 @@ def scan_changes(repo_root: str) -> tuple[list[ChangedFile], list[str]]:
     return files, last_commits
 
 
-def _module_key(path: str) -> str:
-    parts = [part for part in Path(path).parts if part not in {"src", "app", "lib"}]
-    if not parts:
-        return path
-    if parts[0] in {"tests", "test"} and len(parts) > 1:
-        return parts[1]
+STRUCTURAL_PARTS = {"src", "app", "lib", "tests", "test"}
+CONFIG_PARTS = {"config", "settings"}
+IDENTIFIER_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]{2,}")
+
+
+def _normalized_parts(path: str) -> tuple[str, ...]:
+    return tuple(
+        part.casefold()
+        for part in Path(path).with_suffix("").parts
+        if part.casefold() not in STRUCTURAL_PARTS
+    )
+
+
+def _matching_stem(path: str) -> str:
+    stem = Path(path).stem.casefold()
+    if stem.startswith("test_"):
+        return stem.removeprefix("test_")
+    if stem.endswith("_test"):
+        return stem.removesuffix("_test")
+    return stem
+
+
+def _diff_identifiers(changed_file: ChangedFile) -> set[str]:
+    return {
+        token.casefold()
+        for token in IDENTIFIER_PATTERN.findall(changed_file.diff)
+        if len(token) >= 4
+    }
+
+
+def _path_identifiers(changed_file: ChangedFile) -> set[str]:
+    paths = [changed_file.path]
+    if changed_file.old_path:
+        paths.append(changed_file.old_path)
+    identifiers: set[str] = set()
+    for path in paths:
+        identifiers.update(_normalized_parts(path))
+        identifiers.add(_matching_stem(path))
+    return {identifier for identifier in identifiers if len(identifier) >= 3}
+
+
+def _files_are_related(left: ChangedFile, right: ChangedFile) -> bool:
+    if _matching_stem(left.path) == _matching_stem(right.path):
+        return True
+
+    left_parts = set(_normalized_parts(left.path))
+    right_parts = set(_normalized_parts(right.path))
+    shared_parts = left_parts & right_parts
+    if any(len(part) >= 3 for part in shared_parts):
+        return True
+
+    left_path_ids = _path_identifiers(left)
+    right_path_ids = _path_identifiers(right)
+    left_diff_ids = _diff_identifiers(left)
+    right_diff_ids = _diff_identifiers(right)
+
+    if left_path_ids & right_diff_ids:
+        return True
+    if right_path_ids & left_diff_ids:
+        return True
+    return bool(left_diff_ids & right_diff_ids & (left_path_ids | right_path_ids))
+
+
+def _connected_groups(files: list[ChangedFile]) -> list[list[ChangedFile]]:
+    remaining = list(range(len(files)))
+    groups: list[list[ChangedFile]] = []
+    while remaining:
+        pending = [remaining.pop(0)]
+        connected: list[int] = []
+        while pending:
+            current = pending.pop(0)
+            connected.append(current)
+            newly_connected = [
+                candidate
+                for candidate in remaining
+                if any(
+                    _files_are_related(files[candidate], files[index])
+                    for index in connected
+                )
+            ]
+            for candidate in newly_connected:
+                remaining.remove(candidate)
+                pending.append(candidate)
+        groups.append([files[index] for index in connected])
+    return groups
+
+
+def _is_docs_file(changed_file: ChangedFile) -> bool:
+    path = Path(changed_file.path)
+    return path.suffix.casefold() == ".md" or "docs" in {
+        part.casefold() for part in path.parts
+    }
+
+
+def _feature_root(changed_file: ChangedFile) -> str | None:
+    parts = _normalized_parts(changed_file.path)
+    if not parts or parts[0] in CONFIG_PARTS:
+        return None
     return parts[0]
 
 
-def group_files(files: list[ChangedFile]) -> list[list[ChangedFile]]:
+def _certain_independence_reason(groups: list[list[ChangedFile]]) -> str | None:
+    docs_groups = [
+        group for group in groups if all(_is_docs_file(file) for file in group)
+    ]
+    non_docs_groups = [
+        group for group in groups if not all(_is_docs_file(file) for file in group)
+    ]
+    if docs_groups and non_docs_groups:
+        return "documentation is independent from application changes"
+
+    feature_roots = [{_feature_root(file) for file in group} for group in groups]
+    if all(None not in roots and len(roots) == 1 for roots in feature_roots):
+        roots = {next(iter(group_roots)) for group_roots in feature_roots}
+        if len(roots) == len(groups):
+            return "separate feature roots have no relationship"
+    return None
+
+
+def group_files(files: list[ChangedFile]) -> GroupingResult:
     if not files:
-        return []
+        return GroupingResult(groups=(), certain=True)
+    if len(files) <= 2:
+        if len(files) == 2:
+            reason = _certain_independence_reason([[files[0]], [files[1]]])
+        else:
+            reason = None
+        if reason:
+            return GroupingResult(
+                groups=((files[0],), (files[1],)),
+                certain=True,
+                reasons=(reason,),
+            )
+        return GroupingResult(groups=(tuple(files),), certain=True)
 
-    groups: list[list[ChangedFile]] = []
-    remaining = list(files)
-    claimed: set[str] = set()
+    groups = _connected_groups(files)
+    if len(groups) == 1:
+        return GroupingResult(groups=(tuple(groups[0]),), certain=True)
 
-    module_map: dict[str, list[ChangedFile]] = {}
-    for changed_file in remaining:
-        module_map.setdefault(_module_key(changed_file.path), []).append(changed_file)
-
-    for module_files in module_map.values():
-        if len(module_files) > 1:
-            groups.append(module_files)
-            claimed.update(changed_file.path for changed_file in module_files)
-
-    remaining = [
-        changed_file for changed_file in remaining if changed_file.path not in claimed
-    ]
-
-    stem_map: dict[str, list[ChangedFile]] = {}
-    for changed_file in remaining:
-        stem_map.setdefault(_matching_stem(changed_file.path), []).append(changed_file)
-
-    for stem_files in stem_map.values():
-        has_test = any(_is_test_path(changed_file.path) for changed_file in stem_files)
-        has_non_test = any(
-            not _is_test_path(changed_file.path) for changed_file in stem_files
+    reason = _certain_independence_reason(groups)
+    if reason:
+        return GroupingResult(
+            groups=tuple(tuple(group) for group in groups),
+            certain=True,
+            reasons=(reason,),
         )
-        if len(stem_files) > 1 and has_test and has_non_test:
-            groups.append(stem_files)
-            claimed.update(changed_file.path for changed_file in stem_files)
-
-    remaining = [
-        changed_file for changed_file in remaining if changed_file.path not in claimed
-    ]
-
-    matchers = (
-        lambda file: _is_test_path(file.path),
-        lambda file: _is_root_config(file.path),
-        lambda file: "migrations" in Path(file.path).parts,
+    return GroupingResult(
+        groups=tuple(tuple(group) for group in groups),
+        certain=False,
+        reasons=("no strong relationship connects the proposed groups",),
     )
-    for matcher in matchers:
-        matched = [changed_file for changed_file in remaining if matcher(changed_file)]
-        if matched:
-            groups.append(matched)
-            matched_paths = {changed_file.path for changed_file in matched}
-            remaining = [
-                changed_file
-                for changed_file in remaining
-                if changed_file.path not in matched_paths
-            ]
-
-    by_parent: dict[str, list[ChangedFile]] = {}
-    for changed_file in remaining:
-        by_parent.setdefault(str(Path(changed_file.path).parent), []).append(
-            changed_file
-        )
-    groups.extend(by_parent.values())
-    return groups
 
 
 def _is_test_path(path: str) -> bool:
     parts = Path(path).parts
     name = Path(path).name
     return "tests" in parts or name.startswith("test_") or name.endswith("_test.py")
-
-
-def _matching_stem(path: str) -> str:
-    stem = Path(path).stem
-    if stem.startswith("test_"):
-        return stem.removeprefix("test_")
-    if stem.endswith("_test"):
-        return stem.removesuffix("_test")
-    return stem
 
 
 def _is_root_config(path: str) -> bool:
@@ -403,7 +482,9 @@ def _validate_llm_commit_message(
     body_text = body_suffix.strip()
     if separator and not body_text:
         return None, "response contains an empty body"
-    if re.search(r"^\s*(explanation|reasoning|why):", body_text, re.IGNORECASE):
+    if re.search(
+        r"^\s*(explanation|reasoning|why):", body_text, re.IGNORECASE | re.MULTILINE
+    ):
         return None, "response includes explanation text"
 
     subject = subject_line.strip()
@@ -711,13 +792,14 @@ def run_interactive(
         console.print("No changes to commit.")
         return 0
 
+    grouping = group_files(files)
     groups = [
         CommitGroup(
             files=group,
             commit_type=detect_type(group),
             scope=detect_scope(group),
         )
-        for group in group_files(files)
+        for group in grouping.groups
     ]
     if len(groups) == 1 and groups[0].commit_type:
         pushed = is_last_commit_pushed(repo_root)

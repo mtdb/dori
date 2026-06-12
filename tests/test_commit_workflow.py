@@ -17,6 +17,7 @@ spec.loader.exec_module(commit_workflow)
 MAX_PROMPT_DIFF_LINES = commit_workflow.MAX_PROMPT_DIFF_LINES
 ChangedFile = commit_workflow.ChangedFile
 CommitGroup = commit_workflow.CommitGroup
+GroupingResult = commit_workflow.GroupingResult
 _build_review_message = commit_workflow._build_review_message
 _review_group = commit_workflow._review_group
 amend_qualifies = commit_workflow.amend_qualifies
@@ -52,19 +53,102 @@ def test_parse_status_lines_handles_common_statuses():
     ]
 
 
-def test_group_files_groups_source_and_tests_by_module():
+def _group_paths(result: GroupingResult) -> list[list[str]]:
+    return [[file.path for file in group] for group in result.groups]
+
+
+def test_group_files_keeps_feature_and_matching_test_together():
     files = [
-        ChangedFile("dori/chat.py", "modified"),
-        ChangedFile("tests/test_chat.py", "modified"),
-        ChangedFile("README.md", "modified"),
+        ChangedFile("src/payments/service.py", "modified"),
+        ChangedFile("tests/payments/test_service.py", "modified"),
     ]
 
-    groups = group_files(files)
+    result = group_files(files)
 
-    assert [[file.path for file in group] for group in groups] == [
-        ["dori/chat.py", "tests/test_chat.py"],
-        ["README.md"],
+    assert _group_paths(result) == [
+        ["src/payments/service.py", "tests/payments/test_service.py"]
     ]
+    assert result.certain is True
+    assert result.reasons == ()
+
+
+def test_group_files_keeps_configuration_with_code_that_references_its_setting():
+    files = [
+        ChangedFile(
+            "src/payments/service.py",
+            "modified",
+            diff="+timeout = settings.PAYMENT_TIMEOUT",
+        ),
+        ChangedFile(
+            "config/settings.py",
+            "modified",
+            diff="+PAYMENT_TIMEOUT = 30",
+        ),
+    ]
+
+    result = group_files(files)
+
+    assert _group_paths(result) == [["src/payments/service.py", "config/settings.py"]]
+    assert result.certain is True
+
+
+def test_group_files_keeps_two_ambiguous_files_in_one_group():
+    files = [
+        ChangedFile("src/payments/service.py", "modified"),
+        ChangedFile("config/runtime.py", "modified"),
+    ]
+
+    result = group_files(files)
+
+    assert _group_paths(result) == [["src/payments/service.py", "config/runtime.py"]]
+    assert result.certain is True
+
+
+def test_group_files_splits_unrelated_docs_and_application_changes():
+    files = [
+        ChangedFile("src/payments/service.py", "modified"),
+        ChangedFile("docs/deployment.md", "modified"),
+    ]
+
+    result = group_files(files)
+
+    assert _group_paths(result) == [["src/payments/service.py"], ["docs/deployment.md"]]
+    assert result.certain is True
+    assert result.reasons == ("documentation is independent from application changes",)
+
+
+def test_group_files_splits_two_unrelated_feature_roots():
+    files = [
+        ChangedFile("src/payments/service.py", "modified"),
+        ChangedFile("src/accounts/profile.py", "modified"),
+    ]
+
+    result = group_files(files)
+
+    assert _group_paths(result) == [
+        ["src/payments/service.py"],
+        ["src/accounts/profile.py"],
+    ]
+    assert result.certain is True
+    assert result.reasons == ("separate feature roots have no relationship",)
+
+
+def test_group_files_marks_three_unconnected_feature_roots_uncertain():
+    files = [
+        ChangedFile("src/payments/service.py", "modified"),
+        ChangedFile("src/accounts/profile.py", "modified"),
+        ChangedFile("config/runtime.py", "modified"),
+    ]
+
+    result = group_files(files)
+
+    assert _group_paths(result) == [
+        ["src/payments/service.py"],
+        ["src/accounts/profile.py"],
+        ["config/runtime.py"],
+    ]
+    assert result.certain is False
+    assert result.reasons == ("no strong relationship connects the proposed groups",)
 
 
 def test_detect_type_for_docs_tests_build_and_new_files():
@@ -334,6 +418,14 @@ def test_validate_llm_commit_message_rejects_markdown_and_explanations():
     assert (
         validate_llm_commit_message(
             "fix(commit): improve commits\n\nExplanation: clearer summary",
+            group,
+        )
+        is None
+    )
+    assert (
+        validate_llm_commit_message(
+            "fix(commit): improve commits\n\nPreserve body spacing\n\n"
+            "Explanation: clearer summary",
             group,
         )
         is None
@@ -805,7 +897,11 @@ def test_run_interactive_uses_confirm_for_amend_prompt(monkeypatch):
             ["fix(dori): previous subject"],
         ),
     )
-    monkeypatch.setattr(commit_workflow, "group_files", lambda files: [files])
+    monkeypatch.setattr(
+        commit_workflow,
+        "group_files",
+        lambda files: GroupingResult(groups=(tuple(files),), certain=True),
+    )
     monkeypatch.setattr(commit_workflow, "detect_type", lambda files: "fix")
     monkeypatch.setattr(commit_workflow, "detect_scope", lambda files: "dori")
     monkeypatch.setattr(
