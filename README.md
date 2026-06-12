@@ -154,6 +154,9 @@ Dori stores its runtime state in `~/.dori`:
 - a reminders backend
 - a search backend
 
+During setup the prompt text is `Choose search backend`, with `ddgs` as the
+default and `tavily` available when you want Tavily-backed answers.
+
 `dori update` refreshes managed files that still match their last installed hash and preserves files you have edited locally.
 
 The TUI stores the last 100 submitted messages in `.history` so you can recall them with `↑` and `↓` in new sessions.

@@ -10,6 +10,13 @@ from dori.schemas import validate_skill_payload
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def test_packaged_commit_workflow_matches_source_boilerplate() -> None:
+    source = ROOT / "boilerplate" / "scripts" / "_commit_workflow.py"
+    packaged = ROOT / "dori" / "boilerplate" / "scripts" / "_commit_workflow.py"
+
+    assert packaged.read_bytes() == source.read_bytes()
+
+
 def load_reminders_dbus_module() -> ModuleType:
     path = ROOT / "boilerplate" / "presets" / "reminders" / "dbus.py"
     spec = importlib.util.spec_from_file_location("reminders_dbus", path)
