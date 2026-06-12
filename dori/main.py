@@ -126,7 +126,7 @@ def _run_inline(state: RuntimeState, prompt: str) -> None:
     except Exception as e:
         console.print(f"[red]Error:[/red] {escape(str(e))}", highlight=False)
         sys.exit(1)
-    console.print(response.display_text, highlight=False)
+    print(response.display_text)
 
 
 def run_cli_skill(skill_name: str, skill_args: list[str], cwd: str) -> int:

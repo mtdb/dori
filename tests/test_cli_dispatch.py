@@ -119,3 +119,30 @@ def test_run_inline_disables_script_interaction(monkeypatch, capsys):
 
     assert seen == [False]
     assert capsys.readouterr().out.strip() == "done"
+
+
+def test_run_inline_prints_bracketed_url_text_verbatim(monkeypatch, capsys):
+    class FakeEngine:
+        def __init__(self, state, *, allow_script_interaction: bool = True):
+            pass
+
+        async def send(self, prompt: str) -> ChatResponse:
+            return ChatResponse(
+                raw_content="",
+                display_text=(
+                    "Sources:\n"
+                    "- [www.nvidia.com/deep-learning-institute]"
+                    "(https://www.nvidia.com/deep-learning-institute)"
+                ),
+                resolved_skill=None,
+                skill_output=None,
+            )
+
+    monkeypatch.setattr("dori.main.ConversationEngine", FakeEngine)
+
+    _run_inline(RuntimeState(cwd="/tmp"), "hello")
+
+    assert (
+        capsys.readouterr().out.strip()
+        == "Sources:\n- [www.nvidia.com/deep-learning-institute](https://www.nvidia.com/deep-learning-institute)"
+    )

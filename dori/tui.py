@@ -200,8 +200,23 @@ class MessageWidget(Static):
             )
         return Text.assemble(
             Text(f"{AGENT_DISPLAY_NAME}\n", style=f"bold {COLOR_NEMO}"),
-            Text.from_markup(self._content),
+            _render_assistant_text(self._content),
         )
+
+
+def _render_assistant_text(content: str) -> Text:
+    text = Text()
+    lines = content.splitlines()
+
+    for index, line in enumerate(lines):
+        if line.startswith("[red]") and line.endswith("[/red]"):
+            text.append(line.removeprefix("[red]").removesuffix("[/red]"), style="red")
+        else:
+            text.append(line)
+        if index < len(lines) - 1:
+            text.append("\n")
+
+    return text
 
 
 class ThinkingWidget(Static):

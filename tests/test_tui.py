@@ -1,6 +1,8 @@
 import asyncio
 from types import SimpleNamespace
 
+from rich.text import Text
+
 from dori.chat import ChatResponse, build_system_prompt, parse_skill
 from dori.loader import load_available_vram
 from dori.models import RuntimeState, Skill
@@ -512,6 +514,21 @@ def test_mount_nemo_response_renders_display_text():
     widget = asyncio.run(app._mount_nemo_response(DummyMessageList(), chat_response))
 
     assert widget._content == "✓ search\n22°C, sunny"
+
+
+def test_message_widget_renders_bracketed_url_text_without_markup_parsing():
+    widget = MessageWidget(
+        "nemo",
+        "Sources:\n- [www.nvidia.com/deep-learning-institute](https://www.nvidia.com/deep-learning-institute)",
+    )
+
+    rendered = widget.render()
+
+    assert isinstance(rendered, Text)
+    assert (
+        rendered.plain
+        == "Dori\nSources:\n- [www.nvidia.com/deep-learning-institute](https://www.nvidia.com/deep-learning-institute)"
+    )
 
 
 def test_clear_command_resets_chat_but_keeps_input_history():
