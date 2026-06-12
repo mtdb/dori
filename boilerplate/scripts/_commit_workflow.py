@@ -778,6 +778,34 @@ def retry_after_hook_fix(group: CommitGroup, repo_root: str) -> tuple[str | None
     return sha.stdout.strip(), result.stdout + result.stderr
 
 
+def _resolve_grouping(
+    result: GroupingResult,
+    files: list[ChangedFile],
+    console: Console,
+) -> list[list[ChangedFile]]:
+    groups = [list(group) for group in result.groups]
+    if result.certain or len(groups) <= 1:
+        return groups
+
+    console.print("\nGrouping is uncertain:", style="bold")
+    for index, group in enumerate(groups, 1):
+        console.print(f"\nGroup {index}")
+        for changed_file in group:
+            symbol = STATUS_SYMBOL.get(changed_file.status, "?")
+            console.print(f"  {symbol} {changed_file.path}")
+    for reason in result.reasons:
+        console.print(f"  Reason: {reason}", highlight=False)
+
+    answer = choose(
+        "How should these changes be committed?",
+        ["groups", "one"],
+        default="one",
+    )
+    if answer == "groups":
+        return groups
+    return [files]
+
+
 def run_interactive(
     cwd: str | Path | None = None, console: Console | None = None
 ) -> int:
@@ -793,13 +821,14 @@ def run_interactive(
         return 0
 
     grouping = group_files(files)
+    selected_groups = _resolve_grouping(grouping, files, console)
     groups = [
         CommitGroup(
             files=group,
             commit_type=detect_type(group),
             scope=detect_scope(group),
         )
-        for group in grouping.groups
+        for group in selected_groups
     ]
     if len(groups) == 1 and groups[0].commit_type:
         pushed = is_last_commit_pushed(repo_root)

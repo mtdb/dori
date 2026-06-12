@@ -20,6 +20,7 @@ CommitGroup = commit_workflow.CommitGroup
 GroupingResult = commit_workflow.GroupingResult
 _build_review_message = commit_workflow._build_review_message
 _review_group = commit_workflow._review_group
+_resolve_grouping = commit_workflow._resolve_grouping
 amend_qualifies = commit_workflow.amend_qualifies
 build_commit_message = commit_workflow.build_commit_message
 build_commit_message_prompt = commit_workflow.build_commit_message_prompt
@@ -887,6 +888,70 @@ def test_review_group_edits_scope_and_message_with_script_api(monkeypatch):
     assert group.message == "fix(chat): custom message"
 
 
+def test_resolve_grouping_combines_uncertain_groups_by_default(monkeypatch):
+    files = [
+        ChangedFile("src/payments/service.py", "modified"),
+        ChangedFile("src/accounts/profile.py", "modified"),
+        ChangedFile("config/runtime.py", "modified"),
+    ]
+    result = GroupingResult(
+        groups=((files[0],), (files[1],), (files[2],)),
+        certain=False,
+        reasons=("no strong relationship connects the proposed groups",),
+    )
+    calls = []
+
+    def fake_choose(prompt, choices, default=None):
+        calls.append((prompt, choices, default))
+        return "one"
+
+    monkeypatch.setattr(commit_workflow, "choose", fake_choose)
+    output = StringIO()
+    console = commit_workflow.Console(
+        file=output, force_terminal=False, color_system=None
+    )
+
+    groups = _resolve_grouping(result, files, console)
+
+    assert groups == [files]
+    assert calls == [
+        (
+            "How should these changes be committed?",
+            ["groups", "one"],
+            "one",
+        )
+    ]
+    rendered = output.getvalue()
+    assert rendered.count("Grouping is uncertain") == 1
+    assert "Group 1" in rendered
+    assert "Group 3" in rendered
+
+
+def test_resolve_grouping_preserves_user_approved_groups(monkeypatch):
+    files = [
+        ChangedFile("src/payments/service.py", "modified"),
+        ChangedFile("src/accounts/profile.py", "modified"),
+        ChangedFile("config/runtime.py", "modified"),
+    ]
+    result = GroupingResult(
+        groups=((files[0],), (files[1],), (files[2],)),
+        certain=False,
+        reasons=("no strong relationship connects the proposed groups",),
+    )
+    monkeypatch.setattr(
+        commit_workflow,
+        "choose",
+        lambda prompt, choices, default=None: "groups",
+    )
+    console = commit_workflow.Console(
+        file=StringIO(), force_terminal=False, color_system=None
+    )
+
+    groups = _resolve_grouping(result, files, console)
+
+    assert groups == [[files[0]], [files[1]], [files[2]]]
+
+
 def test_run_interactive_uses_confirm_for_amend_prompt(monkeypatch):
     monkeypatch.setattr(commit_workflow, "find_repo_root", lambda cwd=None: "/repo")
     monkeypatch.setattr(
@@ -926,6 +991,58 @@ def test_run_interactive_uses_confirm_for_amend_prompt(monkeypatch):
     assert asked == [
         ("Last commit was 'fix(dori): previous subject'. Amend it?", False)
     ]
+
+
+def test_run_interactive_detects_type_and_scope_after_combining_groups(monkeypatch):
+    files = [
+        ChangedFile("src/payments/service.py", "modified"),
+        ChangedFile("src/accounts/profile.py", "modified"),
+        ChangedFile("config/runtime.py", "modified"),
+    ]
+    monkeypatch.setattr(commit_workflow, "find_repo_root", lambda cwd=None: "/repo")
+    monkeypatch.setattr(
+        commit_workflow,
+        "scan_changes",
+        lambda repo_root: (files, []),
+    )
+    monkeypatch.setattr(
+        commit_workflow,
+        "group_files",
+        lambda changed: GroupingResult(
+            groups=((changed[0],), (changed[1],), (changed[2],)),
+            certain=False,
+            reasons=("no strong relationship connects the proposed groups",),
+        ),
+    )
+    monkeypatch.setattr(
+        commit_workflow,
+        "choose",
+        lambda prompt, choices, default=None: "one",
+    )
+    monkeypatch.setattr(
+        commit_workflow,
+        "is_last_commit_pushed",
+        lambda repo_root: False,
+    )
+    detected = []
+    monkeypatch.setattr(
+        commit_workflow,
+        "detect_type",
+        lambda group: detected.append(("type", [file.path for file in group])) or "fix",
+    )
+    monkeypatch.setattr(
+        commit_workflow,
+        "detect_scope",
+        lambda group: detected.append(("scope", [file.path for file in group])) or "",
+    )
+    monkeypatch.setattr(commit_workflow, "_review_group", lambda *args: False)
+    console = commit_workflow.Console(
+        file=StringIO(), force_terminal=False, color_system=None
+    )
+
+    assert commit_workflow.run_interactive(console=console) == 0
+    expected_paths = [file.path for file in files]
+    assert detected == [("type", expected_paths), ("scope", expected_paths)]
 
 
 def test_commit_group_stages_selected_files_and_commits(monkeypatch):
