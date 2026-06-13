@@ -74,6 +74,18 @@ def test_choose_uses_case_insensitive_unambiguous_terminal_selection(monkeypatch
     assert choose("Type", ["feat", "fix"]) == "fix"
 
 
+def test_choose_raises_interaction_cancelled_on_keyboard_interrupt(monkeypatch):
+    monkeypatch.setattr(script.sys, "stdin", SimpleNamespace(isatty=lambda: True))
+
+    def raise_keyboard_interrupt(*args, **kwargs):
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr(script.Prompt, "ask", raise_keyboard_interrupt)
+
+    with pytest.raises(InteractionCancelled, match="cancelled"):
+        choose("Type", ["feat", "fix"])
+
+
 def test_request_requires_both_file_descriptors(monkeypatch):
     monkeypatch.setenv("DORI_INTERACTION_REQUEST_FD", "1")
     monkeypatch.setattr(script.sys, "stdin", SimpleNamespace(isatty=lambda: False))

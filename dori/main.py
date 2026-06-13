@@ -148,12 +148,19 @@ def run_cli_skill(skill_name: str, skill_args: list[str], cwd: str) -> int:
         "cli": True,
         "args": skill_args,
     }
-    result = subprocess.run(
+    process = subprocess.Popen(
         [sys.executable, str(script_path), json.dumps(payload)],
-        check=False,
         cwd=cwd,
     )
-    return result.returncode
+    try:
+        return process.wait()
+    except KeyboardInterrupt:
+        try:
+            return process.wait(timeout=1)
+        except subprocess.TimeoutExpired:
+            process.terminate()
+            process.wait()
+            return 130
 
 
 if __name__ == "__main__":

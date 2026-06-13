@@ -27,7 +27,10 @@ def ask(prompt: str, default: str | None = None) -> str:
     validated_prompt = _validate_prompt(prompt)
     response = _request({"type": "ask", "prompt": validated_prompt, "default": default})
     if response is None:
-        return Prompt.ask(validated_prompt, default=default)
+        try:
+            return Prompt.ask(validated_prompt, default=default)
+        except KeyboardInterrupt as error:
+            raise InteractionCancelled("Dori interaction was cancelled.") from error
     return _require_string_answer(response, "ask")
 
 
@@ -37,7 +40,10 @@ def confirm(prompt: str, default: bool = False) -> bool:
         {"type": "confirm", "prompt": validated_prompt, "default": default}
     )
     if response is None:
-        return Confirm.ask(validated_prompt, default=default)
+        try:
+            return Confirm.ask(validated_prompt, default=default)
+        except KeyboardInterrupt as error:
+            raise InteractionCancelled("Dori interaction was cancelled.") from error
     answer = response.get("answer")
     if not isinstance(answer, bool):
         raise RuntimeError("Dori returned an invalid confirm response.")
@@ -69,7 +75,10 @@ def choose(
         print(f"  {index}. {choice}")
 
     while True:
-        answer = Prompt.ask(validated_prompt, default=default).strip()
+        try:
+            answer = Prompt.ask(validated_prompt, default=default).strip()
+        except KeyboardInterrupt as error:
+            raise InteractionCancelled("Dori interaction was cancelled.") from error
         if answer.isdigit():
             selection = int(answer)
             if 1 <= selection <= len(normalized_choices):

@@ -1,5 +1,4 @@
 import sys
-from types import SimpleNamespace
 
 import pytest
 
@@ -69,18 +68,49 @@ def test_cli_skill_inherits_terminal_for_interactive_scripts(tmp_path, monkeypat
     script.write_text("print('interactive')\n", encoding="utf-8")
     calls = []
 
-    def fake_run(cmd, **kwargs):
+    class FakeProcess:
+        def wait(self, timeout=None):
+            return 0
+
+    def fake_popen(cmd, **kwargs):
         calls.append((cmd, kwargs))
-        return SimpleNamespace(returncode=0, stdout="", stderr="")
+        return FakeProcess()
 
     monkeypatch.setattr("dori.main.get_runtime_home", lambda: tmp_path)
-    monkeypatch.setattr("dori.main.subprocess.run", fake_run)
+    monkeypatch.setattr("dori.main.subprocess.Popen", fake_popen)
 
     assert run_cli_skill("commit", [], str(tmp_path)) == 0
 
     _, kwargs = calls[0]
     assert "capture_output" not in kwargs
     assert "text" not in kwargs
+
+
+def test_cli_skill_returns_130_when_wait_is_interrupted(tmp_path, monkeypatch):
+    scripts_dir = tmp_path / "scripts"
+    scripts_dir.mkdir()
+    (scripts_dir / "commit.py").write_text("print('interactive')\n", encoding="utf-8")
+
+    class FakeProcess:
+        def __init__(self):
+            self.wait_calls = 0
+
+        def wait(self, timeout=None):
+            self.wait_calls += 1
+            if timeout is None:
+                raise KeyboardInterrupt
+            return 130
+
+    process = FakeProcess()
+
+    def fake_popen(cmd, **kwargs):
+        return process
+
+    monkeypatch.setattr("dori.main.get_runtime_home", lambda: tmp_path)
+    monkeypatch.setattr("dori.main.subprocess.Popen", fake_popen)
+
+    assert run_cli_skill("commit", [], str(tmp_path)) == 130
+    assert process.wait_calls == 2
 
 
 def test_cli_dispatches_update_command(monkeypatch):
