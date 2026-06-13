@@ -19,7 +19,11 @@ def test_packaged_commit_workflow_matches_source_boilerplate() -> None:
 
 def load_reminders_dbus_module() -> ModuleType:
     path = ROOT / "boilerplate" / "presets" / "reminders" / "dbus.py"
-    spec = importlib.util.spec_from_file_location("reminders_dbus", path)
+    return load_boilerplate_module("reminders_dbus", path)
+
+
+def load_boilerplate_module(name: str, path: Path) -> ModuleType:
+    spec = importlib.util.spec_from_file_location(name, path)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)
@@ -172,6 +176,63 @@ def test_non_expert_boilerplate_scripts_write_errors_to_stderr() -> None:
         assert "Error: Missing JSON payload" in result.stderr
 
 
+def test_calendar_requires_confirmation_before_scheduling(monkeypatch, capsys) -> None:
+    calendar = load_boilerplate_module(
+        "calendar_script", ROOT / "boilerplate" / "scripts" / "calendar.py"
+    )
+    payload = {
+        "title": "dentist appointment",
+        "when": "Friday at 10am",
+        "duration": "1 hour",
+        "location": "clinic",
+    }
+    prompts: list[tuple[str, list[str], str | None]] = []
+
+    def fake_choose(prompt, choices, default=None):
+        prompts.append((prompt, list(choices), default))
+        return "confirm"
+
+    monkeypatch.setattr(calendar, "choose", fake_choose)
+    monkeypatch.setattr(
+        calendar.sys,
+        "argv",
+        ["calendar.py", json.dumps(payload)],
+    )
+
+    calendar.main()
+
+    assert prompts == [
+        (
+            "Schedule 'dentist appointment' for Friday at 10am (1 hour) at clinic?",
+            ["confirm", "cancel"],
+            None,
+        )
+    ]
+    assert (
+        capsys.readouterr().out
+        == "📅 [Calendar]: 'dentist appointment' scheduled for Friday at 10am "
+        "(1 hour) at clinic.\n"
+    )
+
+
+def test_calendar_cancel_stops_scheduling(monkeypatch, capsys) -> None:
+    calendar = load_boilerplate_module(
+        "calendar_script_cancel", ROOT / "boilerplate" / "scripts" / "calendar.py"
+    )
+    payload = {"title": "dentist appointment", "when": "Friday at 10am"}
+
+    monkeypatch.setattr(calendar, "choose", lambda *args, **kwargs: "cancel")
+    monkeypatch.setattr(
+        calendar.sys,
+        "argv",
+        ["calendar.py", json.dumps(payload)],
+    )
+
+    calendar.main()
+
+    assert capsys.readouterr().out == "Calendar action cancelled.\n"
+
+
 def test_reminders_presets_include_template_and_dbus() -> None:
     presets_dir = ROOT / "boilerplate" / "presets" / "reminders"
 
@@ -202,6 +263,60 @@ def test_reminders_template_preset_writes_errors_to_stderr() -> None:
     assert "Error: Missing JSON payload" in result.stderr
 
 
+def test_reminders_template_requires_confirmation(monkeypatch, capsys) -> None:
+    reminders = load_boilerplate_module(
+        "reminders_template",
+        ROOT / "boilerplate" / "presets" / "reminders" / "template.py",
+    )
+    payload = {"message": "drink water", "when": "tomorrow at 9am"}
+    prompts: list[tuple[str, list[str], str | None]] = []
+
+    def fake_choose(prompt, choices, default=None):
+        prompts.append((prompt, list(choices), default))
+        return "confirm"
+
+    monkeypatch.setattr(reminders, "choose", fake_choose)
+    monkeypatch.setattr(
+        reminders.sys,
+        "argv",
+        ["template.py", json.dumps(payload)],
+    )
+
+    reminders.main()
+
+    assert prompts == [
+        (
+            "Schedule reminder 'drink water' for tomorrow at 9am?",
+            ["confirm", "cancel"],
+            None,
+        )
+    ]
+    assert (
+        capsys.readouterr().out
+        == "⏰ [System]: I have scheduled a reminder for 'drink water' at "
+        "'tomorrow at 9am'.\n"
+    )
+
+
+def test_reminders_template_cancel_stops_scheduling(monkeypatch, capsys) -> None:
+    reminders = load_boilerplate_module(
+        "reminders_template_cancel",
+        ROOT / "boilerplate" / "presets" / "reminders" / "template.py",
+    )
+    payload = {"message": "drink water", "when": "tomorrow at 9am"}
+
+    monkeypatch.setattr(reminders, "choose", lambda *args, **kwargs: "cancel")
+    monkeypatch.setattr(
+        reminders.sys,
+        "argv",
+        ["template.py", json.dumps(payload)],
+    )
+
+    reminders.main()
+
+    assert capsys.readouterr().out == "Reminder action cancelled.\n"
+
+
 def test_reminders_dbus_preset_rejects_unsupported_time() -> None:
     payload = {
         "skill": "reminders",
@@ -226,7 +341,10 @@ def test_reminders_dbus_preset_rejects_unsupported_time() -> None:
     assert "Use a relative time like 'in 20 minutes'" in result.stderr
 
 
-def test_reminders_dbus_preset_supports_dry_run_relative_time() -> None:
+def test_reminders_dbus_preset_supports_dry_run_relative_time(
+    monkeypatch, capsys
+) -> None:
+    dbus = load_reminders_dbus_module()
     payload = {
         "skill": "reminders",
         "confidence": 0.95,
@@ -235,21 +353,19 @@ def test_reminders_dbus_preset_supports_dry_run_relative_time() -> None:
         "raw_text": "Remind me to drink water in 20 minutes",
         "dry_run": True,
     }
-    result = subprocess.run(
-        [
-            sys.executable,
-            str(ROOT / "boilerplate" / "presets" / "reminders" / "dbus.py"),
-            json.dumps(payload),
-        ],
-        capture_output=True,
-        text=True,
-        check=False,
+
+    monkeypatch.setattr(dbus, "choose", lambda *args, **kwargs: "confirm")
+    monkeypatch.setattr(
+        dbus.sys,
+        "argv",
+        ["dbus.py", json.dumps(payload)],
     )
 
-    assert result.returncode == 0
-    assert result.stderr == ""
+    dbus.main()
+
     assert (
-        "[D-Bus]: Scheduled reminder for 'drink water' in 20 minutes." in result.stdout
+        capsys.readouterr().out
+        == "[D-Bus]: Scheduled reminder for 'drink water' in 20 minutes.\n"
     )
 
 
@@ -287,6 +403,7 @@ def test_reminders_dbus_preset_schedules_detached_python_child(monkeypatch) -> N
 
     monkeypatch.setattr(dbus.shutil, "which", fake_which)
     monkeypatch.setattr(dbus.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(dbus, "choose", lambda *args, **kwargs: "confirm")
     monkeypatch.setattr(
         dbus.sys,
         "argv",
@@ -314,6 +431,32 @@ def test_reminders_dbus_preset_schedules_detached_python_child(monkeypatch) -> N
     }
 
 
+def test_reminders_dbus_cancel_does_not_schedule(monkeypatch, capsys) -> None:
+    dbus = load_reminders_dbus_module()
+    payload = {
+        "message": "drink water",
+        "when": "in 30 seconds",
+    }
+    scheduled: list[tuple[str, int]] = []
+
+    monkeypatch.setattr(dbus, "choose", lambda *args, **kwargs: "cancel")
+    monkeypatch.setattr(
+        dbus,
+        "schedule_notification",
+        lambda message, seconds: scheduled.append((message, seconds)),
+    )
+    monkeypatch.setattr(
+        dbus.sys,
+        "argv",
+        ["dbus.py", json.dumps(payload)],
+    )
+
+    dbus.main()
+
+    assert scheduled == []
+    assert capsys.readouterr().out == "Reminder action cancelled.\n"
+
+
 def test_reminders_dbus_preset_requires_notify_send(monkeypatch, capsys) -> None:
     dbus = load_reminders_dbus_module()
     payload = {
@@ -325,6 +468,7 @@ def test_reminders_dbus_preset_requires_notify_send(monkeypatch, capsys) -> None
     }
 
     monkeypatch.setattr(dbus.shutil, "which", lambda command: None)
+    monkeypatch.setattr(dbus, "choose", lambda *args, **kwargs: "confirm")
     monkeypatch.setattr(
         dbus.sys,
         "argv",

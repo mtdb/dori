@@ -5,6 +5,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from dori.script import choose
+
 RELATIVE_TIME_PATTERN = re.compile(
     r"^\s*in\s+(\d+)\s+(seconds?|minutes?|hours?)\s*$",
     re.IGNORECASE,
@@ -103,6 +105,11 @@ def main() -> None:
             file=sys.stderr,
         )
         sys.exit(1)
+
+    prompt = f"Schedule reminder '{message}' for {when}?"
+    if choose(prompt, ["confirm", "cancel"]) == "cancel":
+        print("Reminder action cancelled.")
+        return
 
     if not payload.get("dry_run", False):
         if shutil.which("notify-send") is None:

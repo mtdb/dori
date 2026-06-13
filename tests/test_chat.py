@@ -286,8 +286,41 @@ def test_engine_formats_choose_workflow_defaults_without_rich_markup_brackets():
         ),
     )
 
-    assert "Commit this group? (y, n) (default: y)" in response.display_text
+    assert "Commit this group? (1. y, 2. n) (default: y)" in response.display_text
     assert "[default:" not in response.display_text
+
+
+def test_engine_formats_numbered_choose_options_for_chat_workflows():
+    state = RuntimeState(cwd="/tmp")
+    engine = ConversationEngine(state)
+
+    rendered = engine._format_interaction_request(
+        InteractionRequest(
+            1,
+            "choose",
+            "Review action",
+            choices=("confirm", "cancel"),
+            default="confirm",
+        )
+    )
+
+    assert rendered == "Review action (1. confirm, 2. cancel) (default: confirm)"
+
+
+def test_engine_formats_numbered_choose_options_without_default_suffix():
+    state = RuntimeState(cwd="/tmp")
+    engine = ConversationEngine(state)
+
+    rendered = engine._format_interaction_request(
+        InteractionRequest(
+            1,
+            "choose",
+            "Review action",
+            choices=("confirm", "cancel"),
+        )
+    )
+
+    assert rendered == "Review action (1. confirm, 2. cancel)"
 
 
 def test_engine_answer_workflow_does_not_change_llm_history():

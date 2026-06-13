@@ -1,6 +1,8 @@
 import json
 import sys
 
+from dori.script import choose
+
 
 def main():
     if len(sys.argv) < 2:
@@ -11,6 +13,11 @@ def main():
         payload = json.loads(sys.argv[1])
         message = payload.get("message", "unknown")
         when = payload.get("when", "unknown time")
+
+        prompt = f"Schedule reminder '{message}' for {when}?"
+        if choose(prompt, ["confirm", "cancel"]) == "cancel":
+            print("Reminder action cancelled.")
+            return
 
         # Deterministic output
         print(f"⏰ [System]: I have scheduled a reminder for '{message}' at '{when}'.")

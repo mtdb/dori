@@ -351,7 +351,9 @@ class ConversationEngine:
             return f"{request.prompt}{suffix}"
 
         if request.kind == "choose":
-            options = ", ".join(request.choices)
+            options = ", ".join(
+                f"{index}. {choice}" for index, choice in enumerate(request.choices, 1)
+            )
             if request.default is not None:
                 return f"{request.prompt} ({options}) (default: {request.default})"
             return f"{request.prompt} ({options})"

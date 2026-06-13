@@ -1,6 +1,8 @@
 import json
 import sys
 
+from dori.script import choose
+
 
 def main():
     if len(sys.argv) < 2:
@@ -13,6 +15,16 @@ def main():
         when = payload.get("when", "unknown time")
         duration = payload.get("duration")
         location = payload.get("location")
+
+        prompt = f"Schedule '{title}' for {when}"
+        if duration:
+            prompt += f" ({duration})"
+        if location:
+            prompt += f" at {location}"
+        prompt += "?"
+        if choose(prompt, ["confirm", "cancel"]) == "cancel":
+            print("Calendar action cancelled.")
+            return
 
         line = f"📅 [Calendar]: '{title}' scheduled for {when}"
         if duration:
