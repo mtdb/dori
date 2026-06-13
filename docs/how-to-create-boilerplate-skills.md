@@ -156,9 +156,10 @@ if __name__ == "__main__":
   `choose(prompt, choices, default=None)`. These work in chat and in direct
   `dori <skill>` execution. Do not read directly from stdin for follow-up
   prompts.
-- **Treat `dori --prompt` as single-turn only**. Interactive scripts should
-  fail with a clear message telling the user to use the TUI chat or run the
-  skill directly.
+- **Support terminal-attached `dori --prompt` runs**. Interactive scripts using
+  `dori.script` can complete there as long as stdin is a TTY. Non-interactive
+  `dori --prompt` runs should fail with a clear message instead of consuming
+  piped input.
 
 ---
 

@@ -4,6 +4,7 @@ import json
 import os
 import subprocess
 import sys
+from typing import TextIO
 
 from rich.console import Console
 from rich.markup import escape
@@ -18,6 +19,12 @@ from dori.loader import (
 )
 from dori.models import RuntimeState
 from dori.tui import start_tui
+
+
+class _InlineInteractionError(RuntimeError):
+    def __init__(self, message: str, *, exit_code: int) -> None:
+        super().__init__(message)
+        self.exit_code = exit_code
 
 
 def _read_debug_flag() -> bool:
@@ -120,13 +127,58 @@ def run():
 def _run_inline(state: RuntimeState, prompt: str) -> None:
     """Execute a single conversation turn and print the result to stdout."""
     console = Console()
-    engine = ConversationEngine(state, allow_script_interaction=False)
     try:
-        response = asyncio.run(engine.send(prompt))
+        exit_code = asyncio.run(_run_inline_session(state, prompt, stdin=sys.stdin))
+    except _InlineInteractionError as e:
+        console.print(f"[red]Error:[/red] {escape(str(e))}", highlight=False)
+        sys.exit(e.exit_code)
     except Exception as e:
         console.print(f"[red]Error:[/red] {escape(str(e))}", highlight=False)
         sys.exit(1)
-    print(response.display_text)
+
+    if exit_code != 0:
+        sys.exit(exit_code)
+
+
+async def _run_inline_session(
+    state: RuntimeState, prompt: str, *, stdin: TextIO
+) -> int:
+    engine = ConversationEngine(state, allow_script_interaction=True)
+    try:
+        response = await engine.send(prompt)
+        _print_inline_response(response.display_text)
+
+        while response.workflow_pending:
+            if not stdin.isatty():
+                await engine.cancel_workflow()
+                raise _InlineInteractionError(
+                    "Inline interaction requires a terminal. Use the TUI chat for non-interactive runs.",
+                    exit_code=1,
+                )
+
+            try:
+                raw_value = stdin.readline()
+            except KeyboardInterrupt:
+                await engine.cancel_workflow()
+                return 130
+
+            if raw_value == "":
+                await engine.cancel_workflow()
+                return 130
+
+            response = await engine.answer_workflow(raw_value.rstrip("\n"))
+            _print_inline_response(response.display_text)
+
+        return 0
+    finally:
+        close = getattr(engine, "close", None)
+        if close is not None:
+            await close()
+
+
+def _print_inline_response(display_text: str) -> None:
+    if display_text:
+        print(display_text)
 
 
 def run_cli_skill(skill_name: str, skill_args: list[str], cwd: str) -> int:
