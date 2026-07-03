@@ -6,6 +6,7 @@
 - `message`: A commit message only if the user explicitly provided one — omit otherwise
 - `type`: A conventional commit type only if the user explicitly requested one (e.g. "feat", "fix", "docs") — omit otherwise
 - `scope`: A conventional commit scope only if the user explicitly requested one — omit otherwise
+- `mode`: "partial" if the user wants to commit only the staged changes, "full" if the user explicitly wants everything staged and committed — omit otherwise
 - `confidence`: Numeric confidence from 0.0 to 1.0
 - `raw_text`: Copy the user's original message verbatim
 
@@ -18,3 +19,9 @@ Assistant: {"skill": "commit", "confidence": 0.95, "raw_text": "create commits f
 
 User: commit this as fix(tui)
 Assistant: {"skill": "commit", "confidence": 0.96, "type": "fix", "scope": "tui", "raw_text": "commit this as fix(tui)"}
+
+User: commit solo lo que tengo en staging
+Assistant: {"skill": "commit", "confidence": 0.95, "mode": "partial", "raw_text": "commit solo lo que tengo en staging"}
+
+User: commit everything, all the changes
+Assistant: {"skill": "commit", "confidence": 0.95, "mode": "full", "raw_text": "commit everything, all the changes"}

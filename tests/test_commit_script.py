@@ -27,8 +27,8 @@ def test_commit_script_prints_cancelled_on_interaction_cancelled(monkeypatch, ca
     monkeypatch.setattr(commit_script, "InteractionCancelled", cancelled_error)
     monkeypatch.setattr(
         commit_script,
-        "run_interactive",
-        lambda: (_ for _ in ()).throw(cancelled_error()),
+        "run_workflow",
+        lambda payload: (_ for _ in ()).throw(cancelled_error()),
     )
     monkeypatch.setattr(sys, "argv", ["commit.py", "{}"])
 
