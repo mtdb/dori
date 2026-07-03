@@ -1,0 +1,33 @@
+{
+  "id": "dori-script-protocol-version-test",
+  "source": "dori@9793ea9",
+  "original_subject": "test(script): cover protocol version rejection",
+  "curated_subject": "test(script): cover protocol version rejection",
+  "expected_types": [
+    "test"
+  ],
+  "expected_scopes": [
+    "script"
+  ],
+  "expected_keywords": [
+    [
+      "protocol",
+      "version"
+    ]
+  ],
+  "files": [
+    {
+      "path": "tests/test_script_api.py",
+      "status": "modified"
+    }
+  ],
+  "stat": "tests/test_script_api.py |   30 ++++++++++++++++++++++++++++++\n 1 file changed, 30 insertions(+)",
+  "diff": "diff --git a/tests/test_script_api.py b/tests/test_script_api.py\nindex 1e5c106..c21f74a 100644\n--- a/tests/test_script_api.py\n+++ b/tests/test_script_api.py\n@@ -171,6 +171,36 @@ def test_request_raises_for_mismatched_response_id(monkeypatch):\n         os.close(response_write)\n \n \n+def test_request_raises_for_unsupported_response_version(monkeypatch):\n+    request_read, request_write = os.pipe()\n+    response_read, response_write = os.pipe()\n+    _set_channel_env(monkeypatch, request_write, response_read)\n+\n+    def reply():\n+        request = json.loads(_read_request_line(request_read))\n+        os.write(\n+            response_write,\n+            (\n+                json.dumps({\"version\": 2, \"id\": request[\"id\"], \"answer\": \"ok\"}) + \"\\n\"\n+            ).encode(\"utf-8\"),\n+        )\n+\n+    thread = threading.Thread(target=reply)\n+    thread.start()\n+\n+    try:\n+        with pytest.raises(\n+            RuntimeError, match=\"unsupported interaction protocol version\"\n+        ):\n+            ask(\"Name\")\n+    finally:\n+        thread.join(timeout=5)\n+        os.close(request_read)\n+        os.close(request_write)\n+        os.close(response_read)\n+        os.close(response_write)\n+\n+\n def test_request_raises_for_malformed_json_response(monkeypatch):\n     request_read, request_write = os.pipe()\n     response_read, response_write = os.pipe()\n",
+  "recent_subjects": [
+    "feat(script): add minimal interaction API",
+    "docs: design chat-driven script interactions",
+    "fix(dori): handle missing widgets when updating status and prompt labels",
+    "fix(dori): add md5 check for unchanged files in update_workspace command",
+    "test(tests): Update test_init_presets.py to report unchanged managed files."
+  ]
+}

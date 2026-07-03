@@ -1,0 +1,45 @@
+{
+  "id": "angular-i18n-select-hasown",
+  "source": "angular/angular@311aff05aa2c",
+  "original_subject": "fix(common): use Object.hasOwn in I18nSelectPipe to handle null-prototype and shadowed mappings",
+  "expected_types": [
+    "fix"
+  ],
+  "expected_scopes": [
+    "common",
+    "i18n"
+  ],
+  "expected_keywords": [
+    [
+      "hasOwn",
+      "hasOwnProperty",
+      "null-prototype",
+      "null prototype"
+    ],
+    [
+      "I18nSelectPipe",
+      "i18n",
+      "pipe",
+      "mapping"
+    ]
+  ],
+  "files": [
+    {
+      "path": "packages/common/src/pipes/i18n_select_pipe.ts",
+      "status": "modified"
+    },
+    {
+      "path": "packages/common/test/pipes/i18n_select_pipe_spec.ts",
+      "status": "modified"
+    }
+  ],
+  "stat": "packages/common/src/pipes/i18n_select_pipe.ts      |    4 ++--\n .../common/test/pipes/i18n_select_pipe_spec.ts     |   16 ++++++++++++++++\n 2 files changed, 18 insertions(+), 2 deletions(-)",
+  "diff": "diff --git a/packages/common/src/pipes/i18n_select_pipe.ts b/packages/common/src/pipes/i18n_select_pipe.ts\nindex 3ff8f9888ce4..dd399b6e2a52 100644\n--- a/packages/common/src/pipes/i18n_select_pipe.ts\n+++ b/packages/common/src/pipes/i18n_select_pipe.ts\n@@ -45,11 +45,11 @@ export class I18nSelectPipe implements PipeTransform {\n       throw invalidPipeArgumentError(I18nSelectPipe, mapping);\n     }\n \n-    if (mapping.hasOwnProperty(value)) {\n+    if (Object.hasOwn(mapping, value)) {\n       return mapping[value];\n     }\n \n-    if (mapping.hasOwnProperty('other')) {\n+    if (Object.hasOwn(mapping, 'other')) {\n       return mapping['other'];\n     }\n \ndiff --git a/packages/common/test/pipes/i18n_select_pipe_spec.ts b/packages/common/test/pipes/i18n_select_pipe_spec.ts\nindex 5ad7d5682711..0aba826832b7 100644\n--- a/packages/common/test/pipes/i18n_select_pipe_spec.ts\n+++ b/packages/common/test/pipes/i18n_select_pipe_spec.ts\n@@ -38,6 +38,22 @@ describe('I18nSelectPipe', () => {\n       expect(() => pipe.transform('male', 'hey' as any)).toThrowError();\n     });\n \n+    it('should work with null-prototype mappings (Object.create(null))', () => {\n+      const nullProtoMapping = Object.assign(Object.create(null), {\n+        greeting: 'hello',\n+        other: 'fallback',\n+      }) as {[key: string]: string};\n+      expect(pipe.transform('greeting', nullProtoMapping)).toEqual('hello');\n+    });\n+\n+    it('should work when hasOwnProperty is shadowed by a mapping key', () => {\n+      const shadowedMapping = {\n+        hasOwnProperty: () => false,\n+        greeting: 'hello',\n+      } as unknown as {[key: string]: string};\n+      expect(pipe.transform('greeting', shadowedMapping)).toEqual('hello');\n+    });\n+\n     it('should be available as a standalone pipe', () => {\n       @Component({\n         selector: 'test-component',\n",
+  "recent_subjects": [
+    "ci: setup Node.js in adev-preview-deploy workflow using .nvmrc",
+    "refactor(compiler): move block name normalization into lexer",
+    "fix(compiler): permissive whitespace parsing in default never blocks",
+    "docs: remove fixed font-size from table headers in docs",
+    "docs: update service documentation to compare @Service and @Injectable decorators with a feature comparison table"
+  ]
+}

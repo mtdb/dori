@@ -1,0 +1,40 @@
+{
+  "id": "angular-core-injectasync-promise",
+  "source": "angular/angular@91d168e74b7c",
+  "original_subject": "fix(core): avoid uncaught promise errors in injectAsync prefetching",
+  "expected_types": [
+    "fix"
+  ],
+  "expected_scopes": [
+    "core"
+  ],
+  "expected_keywords": [
+    [
+      "injectAsync"
+    ],
+    [
+      "promise",
+      "error",
+      "rejection"
+    ]
+  ],
+  "files": [
+    {
+      "path": "packages/core/src/di/inject_async.ts",
+      "status": "modified"
+    },
+    {
+      "path": "packages/core/test/di/inject_async/inject_async_spec.ts",
+      "status": "modified"
+    }
+  ],
+  "stat": "packages/core/src/di/inject_async.ts               |    7 +++-\n .../core/test/di/inject_async/inject_async_spec.ts |   35 ++++++++++++++++++++\n 2 files changed, 40 insertions(+), 2 deletions(-)",
+  "diff": "diff --git a/packages/core/src/di/inject_async.ts b/packages/core/src/di/inject_async.ts\nindex f7a6788e0de0..dabca71a5159 100644\n--- a/packages/core/src/di/inject_async.ts\n+++ b/packages/core/src/di/inject_async.ts\n@@ -74,7 +74,10 @@ export function injectAsync<T>(\n   };\n \n   if (options?.prefetch) {\n-    options.prefetch().then(() => load());\n+    options\n+      .prefetch()\n+      .then(() => load())\n+      .catch(() => {});\n   }\n \n   // We can't use `inject` later on because of the async nature of the loader\n@@ -131,7 +134,7 @@ export type PrefetchTrigger = () => Promise<void>;\n  */\n export function onIdle(options?: {timeout?: number}): Promise<void> {\n   if (ngDevMode) {\n-    assertInInjectionContext(injectAsync);\n+    assertInInjectionContext(onIdle);\n   }\n \n   const idleService = inject(IDLE_SERVICE);\ndiff --git a/packages/core/test/di/inject_async/inject_async_spec.ts b/packages/core/test/di/inject_async/inject_async_spec.ts\nindex e2becca1c264..9d21a43779e3 100644\n--- a/packages/core/test/di/inject_async/inject_async_spec.ts\n+++ b/packages/core/test/di/inject_async/inject_async_spec.ts\n@@ -301,4 +301,39 @@ describe('injectAsync', () => {\n \n     jasmine.clock().uninstall();\n   });\n+\n+  it('should not cause an unhandled promise rejection if prefetch trigger rejects', async () => {\n+    await TestBed.runInInjectionContext(async () => {\n+      const fooPromise = injectAsync(() => Promise.resolve(FooService), {\n+        prefetch: () => Promise.reject(new Error('prefetch error')),\n+      });\n+\n+      await Promise.resolve();\n+\n+      const foo = await fooPromise();\n+      expect(foo).toBeInstanceOf(FooService);\n+    });\n+  });\n+\n+  it('should not cause an unhandled promise rejection if loader rejects during prefetch', async () => {\n+    await TestBed.runInInjectionContext(async () => {\n+      const fooPromise = injectAsync(() => Promise.reject(new Error('loader error')), {\n+        prefetch: () => Promise.resolve(),\n+      });\n+\n+      await Promise.resolve();\n+      await Promise.resolve();\n+      await Promise.resolve();\n+\n+      let error!: Error;\n+      try {\n+        await fooPromise();\n+      } catch (e: any) {\n+        error = e;\n+      }\n+\n+      expect(error).toBeDefined();\n+      expect(error.message).toBe('loader error');\n+    });\n+  });\n });\n",
+  "recent_subjects": [
+    "docs: remove space before question mark in landing page heading",
+    "docs: add error guide for NG05101",
+    "docs: Add docs for `markAsTouched` with `skipDescendants`",
+    "build: update dependency node to v22.23.0",
+    "docs: add missing space before decorator link in components guide"
+  ]
+}

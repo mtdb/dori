@@ -1,0 +1,33 @@
+{
+  "id": "dori-pyproject-license-metadata",
+  "source": "dori@f530688",
+  "original_subject": "build: add license and metadata to pyproject.toml",
+  "curated_subject": "build: add license and metadata to pyproject.toml",
+  "expected_types": [
+    "build",
+    "chore"
+  ],
+  "expected_scopes": [],
+  "expected_keywords": [
+    [
+      "license",
+      "metadata",
+      "pyproject"
+    ]
+  ],
+  "files": [
+    {
+      "path": "pyproject.toml",
+      "status": "modified"
+    }
+  ],
+  "stat": "pyproject.toml |   39 ++++++++++++++++++++++++++++++++++++++-\n 1 file changed, 38 insertions(+), 1 deletion(-)",
+  "diff": "diff --git a/pyproject.toml b/pyproject.toml\nindex f43f0cc..f0d133d 100644\n--- a/pyproject.toml\n+++ b/pyproject.toml\n@@ -8,6 +8,22 @@ version = \"0.1.0\"\n description = \"Dori terminal assistant\"\n readme = \"README.md\"\n requires-python = \">=3.11,<4.0\"\n+license = \"MIT\"\n+license-files = [\"LICENSE\"]\n+authors = [{ name = \"Mauricio\" }]\n+keywords = [\"cli\", \"local-first\", \"ollama\", \"terminal\", \"assistant\"]\n+classifiers = [\n+    \"Development Status :: 3 - Alpha\",\n+    \"Environment :: Console\",\n+    \"Intended Audience :: Developers\",\n+    \"Operating System :: OS Independent\",\n+    \"Programming Language :: Python :: 3\",\n+    \"Programming Language :: Python :: 3.11\",\n+    \"Programming Language :: Python :: 3.12\",\n+    \"Topic :: Scientific/Engineering :: Artificial Intelligence\",\n+    \"Topic :: Software Development :: User Interfaces\",\n+    \"Topic :: Utilities\",\n+]\n dependencies = [\n     \"rich>=13.0.0\",\n     \"ollama>=0.2.0\",\n@@ -19,11 +35,32 @@ dependencies = [\n [project.scripts]\n dori = \"dori.main:run\"\n \n+[project.urls]\n+Homepage = \"https://github.com/mtdb/dori\"\n+Repository = \"https://github.com/mtdb/dori\"\n+Issues = \"https://github.com/mtdb/dori/issues\"\n+\n [project.optional-dependencies]\n dev = [\"pytest>=8.0\", \"ruff\", \"mypy\", \"pre-commit\"]\n \n [tool.setuptools]\n-packages = [\"dori\"]\n+include-package-data = true\n+\n+[tool.setuptools.packages.find]\n+include = [\"dori*\"]\n+namespaces = true\n+\n+[tool.setuptools.package-data]\n+dori = [\n+    \"tui.tcss\",\n+    \"boilerplate/*.md\",\n+    \"boilerplate/assets/*\",\n+    \"boilerplate/presets/reminders/*\",\n+    \"boilerplate/presets/search/*\",\n+    \"boilerplate/scripts/*\",\n+    \"boilerplate/skills/*\",\n+    \"boilerplate/skills/devtools/*\",\n+]\n \n [tool.poetry]\n packages = [{ include = \"dori\" }]\n",
+  "recent_subjects": [
+    "build(dori): Add bundled boilerplate directory and modify commands to use it",
+    "docs: clarify what Dori is and how it works",
+    "refactor(commands): remove legacy persona migration function and related tests",
+    "test(tests): update tests for chat and commit workflow changes",
+    "fix(dori): disallow script interaction in ConversationEngine by default"
+  ]
+}

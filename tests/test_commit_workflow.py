@@ -239,7 +239,9 @@ def test_suggest_commit_message_repairs_invalid_first_attempt(monkeypatch):
             return next(responses)
 
     monkeypatch.setattr(commit_workflow, "_load_ollama", lambda: FakeOllama)
-    assert suggest_commit_message(_request()) == "feat: add pagination"
+    assert (
+        suggest_commit_message(_request(commit_type="feat")) == "feat: add pagination"
+    )
     assert len(calls) == 2
     assert "Validation error" in calls[1][-1]["content"]
 
@@ -265,8 +267,96 @@ def test_suggest_commit_message_uses_higher_temperature_on_retry(monkeypatch):
             return {"message": {"content": "feat: add pagination"}}
 
     monkeypatch.setattr(commit_workflow, "_load_ollama", lambda: FakeOllama)
-    suggest_commit_message(_request(), retry=True)
+    suggest_commit_message(_request(commit_type="feat"), retry=True)
     assert seen_options == [commit_workflow.COMMIT_MESSAGE_RETRY_OPTIONS]
+
+
+def test_suggest_commit_message_classifies_type_when_not_forced(monkeypatch):
+    responses = iter(
+        [
+            {"message": {"content": "fix"}},
+            {"message": {"content": "fix: handle missing key"}},
+        ]
+    )
+    calls = []
+
+    class FakeOllama:
+        @staticmethod
+        def chat(model, messages, options):
+            calls.append(messages)
+            return next(responses)
+
+    monkeypatch.setattr(commit_workflow, "_load_ollama", lambda: FakeOllama)
+    request = _request()
+    assert suggest_commit_message(request) == "fix: handle missing key"
+    assert request.commit_type == "fix"
+    assert len(calls) == 2
+    assert "classify" in calls[0][0]["content"]
+
+
+def test_classify_commit_type_parses_and_rejects_answers():
+    class FakeOllama:
+        answer = "fix"
+
+        @classmethod
+        def chat(cls, model, messages, options):
+            return {"message": {"content": cls.answer}}
+
+    changes = _request().changes
+    assert commit_workflow.classify_commit_type(changes, FakeOllama) == "fix"
+    FakeOllama.answer = " Refactor. "
+    assert commit_workflow.classify_commit_type(changes, FakeOllama) == "refactor"
+    FakeOllama.answer = "this is a fix"
+    assert commit_workflow.classify_commit_type(changes, FakeOllama) is None
+
+
+def test_detect_type_from_paths_forces_unambiguous_types():
+    detect = commit_workflow.detect_type_from_paths
+
+    def files(*paths):
+        return [ChangedFile(path, "modified") for path in paths]
+
+    assert detect(files("tests/test_app.py", "app_spec.ts")) == "test"
+    assert detect(files("docs/guide.md", "README.md")) == "docs"
+    assert detect(files("pyproject.toml", "poetry.lock")) == "build"
+    assert detect(files(".github/workflows/ci.yml")) == "ci"
+    assert detect(files("src/app.py", "tests/test_app.py")) is None
+    assert detect([]) is None
+
+
+def test_validate_commit_message_normalizes_llm_quirks():
+    request = _request()
+
+    message, error = validate_commit_message("fix: handle empty payload.", request)
+    assert error is None
+    assert message == "fix: handle empty payload"
+
+    message, error = validate_commit_message(
+        "fix: guard reads\n\nfix(script):\n\nExplain the actual change here",
+        request,
+    )
+    assert error is None
+    assert message == "fix: guard reads\n\nExplain the actual change here"
+
+
+def test_validate_commit_message_rejects_pathlike_scope_and_meta_body():
+    request = _request()
+
+    message, error = validate_commit_message("fix(src/app.py): guard reads", request)
+    assert message is None
+    assert "file path" in error
+
+    message, error = validate_commit_message(
+        "fix: guard reads\n\n2 files changed, 4 insertions(+)", request
+    )
+    assert message is None
+    assert "diff stat" in error
+
+    message, error = validate_commit_message(
+        "fix: guard reads\n\nThe staged change summary indicates a fix.", request
+    )
+    assert message is None
+    assert "explains the message" in error
 
 
 def test_fallback_commit_message_uses_forced_type_and_scope():

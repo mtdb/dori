@@ -1,0 +1,36 @@
+{
+  "id": "angular-forms-docs-signal-call",
+  "source": "angular/angular@e653a7bf3028",
+  "original_subject": "docs(forms): correct signal field access in form model example",
+  "expected_types": [
+    "docs",
+    "fix"
+  ],
+  "expected_scopes": [
+    "forms",
+    "docs"
+  ],
+  "expected_keywords": [
+    [
+      "myForm",
+      "form model",
+      "signal",
+      "example"
+    ]
+  ],
+  "files": [
+    {
+      "path": "adev/src/content/guide/forms/signals/designing-your-form-model.md",
+      "status": "modified"
+    }
+  ],
+  "stat": ".../forms/signals/designing-your-form-model.md     |    4 ++--\n 1 file changed, 2 insertions(+), 2 deletions(-)",
+  "diff": "diff --git a/adev/src/content/guide/forms/signals/designing-your-form-model.md b/adev/src/content/guide/forms/signals/designing-your-form-model.md\nindex f851af4d4a60..e4389576f2b2 100644\n--- a/adev/src/content/guide/forms/signals/designing-your-form-model.md\n+++ b/adev/src/content/guide/forms/signals/designing-your-form-model.md\n@@ -380,7 +380,7 @@ class MyForm {\n \n   handleSubmit() {\n     submit(this.myForm, async () => {\n-      await this.myDataService.update(formModelToDomainModel(this.myForm.value()));\n+      await this.myDataService.update(formModelToDomainModel(this.myForm().value()));\n     });\n   };\n }\n@@ -402,7 +402,7 @@ class MyForm {\n     effect(() => {\n       // When the form model changes to a valid value, update the domain model.\n       if (this.myForm().valid()) {\n-        this.domainModel.set(formModelToDomainModel(this.myForm.value()));\n+        this.domainModel.set(formModelToDomainModel(this.myForm().value()));\n       }\n     });\n   };\n",
+  "recent_subjects": [
+    "fix(compiler-cli): include toSignal in debugName transform",
+    "docs: add documentation for HttpClient response body size limit and related error NG02825",
+    "docs(docs-infra): fix typo and malformed markdown bullet in angular-developer skill",
+    "refactor(core): enable foreign components to render content lazily",
+    "docs: update Vitest configuration option from `configFile` to `runnerConfig`"
+  ]
+}

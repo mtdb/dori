@@ -1,0 +1,39 @@
+{
+  "id": "dori-update-workspace-md5",
+  "source": "dori@ae48663",
+  "original_subject": "fix(dori): add md5 check for unchanged files in update_workspace command",
+  "curated_subject": "fix(commands): skip unchanged files in update_workspace via md5 check",
+  "expected_types": [
+    "fix",
+    "feat",
+    "perf",
+    "refactor"
+  ],
+  "expected_scopes": [
+    "commands",
+    "update"
+  ],
+  "expected_keywords": [
+    [
+      "md5",
+      "hash",
+      "unchanged",
+      "identical"
+    ]
+  ],
+  "files": [
+    {
+      "path": "dori/commands.py",
+      "status": "modified"
+    }
+  ],
+  "stat": "dori/commands.py |    6 ++++++\n 1 file changed, 6 insertions(+)",
+  "diff": "diff --git a/dori/commands.py b/dori/commands.py\nindex c9af0ce..76a459d 100644\n--- a/dori/commands.py\n+++ b/dori/commands.py\n@@ -632,6 +632,12 @@ def update_workspace(\n             )\n             continue\n \n+        source_md5 = _compute_md5(src)\n+        if current_md5 == source_md5:\n+            console.print(f\"[green]Unchanged[/green] {relative}\")\n+            manifest[relative] = current_md5\n+            continue\n+\n         shutil.copy2(src, dest)\n         manifest[relative] = _compute_md5(dest)\n         console.print(f\"[green]Updated[/green] {relative}\")\n",
+  "recent_subjects": [
+    "test(tests): Update test_init_presets.py to report unchanged managed files.",
+    "fix(boilerplate): add commit message retry options and collapse alternative subjects in subject line",
+    "test(tests): add tests for importing modules without script dir shadowing and loading ddgs without script dir shadowing",
+    "fix(boilerplate): fix import issues in ddgs and ollama modules",
+    "fix(dori): edit last message on ctrl+r instead of retrying"
+  ]
+}

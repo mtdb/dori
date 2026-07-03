@@ -1,0 +1,52 @@
+{
+  "id": "angular-zonejs-proto-hardening",
+  "source": "angular/angular@2d33fd55ff0f",
+  "original_subject": "fix(zone.js): harden zoneSymbolEventNames and patches against __proto__ key",
+  "expected_types": [
+    "fix",
+    "refactor",
+    "perf"
+  ],
+  "expected_scopes": [
+    "zone.js",
+    "zone"
+  ],
+  "expected_keywords": [
+    [
+      "__proto__",
+      "proto",
+      "pollution",
+      "hasOwn",
+      "Object.create(null)",
+      "null prototype",
+      "harden"
+    ]
+  ],
+  "files": [
+    {
+      "path": "packages/zone.js/lib/common/utils.ts",
+      "status": "modified"
+    },
+    {
+      "path": "packages/zone.js/lib/zone-impl.ts",
+      "status": "modified"
+    },
+    {
+      "path": "packages/zone.js/test/typings/tsconfig.json",
+      "status": "modified"
+    },
+    {
+      "path": "packages/zone.js/tsconfig.json",
+      "status": "modified"
+    }
+  ],
+  "stat": "packages/zone.js/lib/common/utils.ts        |    3 ++-\n packages/zone.js/lib/zone-impl.ts           |    4 ++--\n packages/zone.js/test/typings/tsconfig.json |    2 +-\n packages/zone.js/tsconfig.json              |    7 ++++---\n 4 files changed, 9 insertions(+), 7 deletions(-)",
+  "diff": "diff --git a/packages/zone.js/lib/common/utils.ts b/packages/zone.js/lib/common/utils.ts\nindex fe30d8528c18..03c9880c453f 100644\n--- a/packages/zone.js/lib/common/utils.ts\n+++ b/packages/zone.js/lib/common/utils.ts\n@@ -129,7 +129,8 @@ export const isMix: boolean =\n   !isWebWorker &&\n   !!(isWindowExists && internalWindow['HTMLElement']);\n \n-const zoneSymbolEventNames: {[eventName: string]: string} = {};\n+// tslint:disable-next-line:no-toplevel-property-access\n+const zoneSymbolEventNames: {[eventName: string]: string} = Object.create(null);\n \n const enableBeforeunloadSymbol = zoneSymbol('enable_beforeunload');\n \ndiff --git a/packages/zone.js/lib/zone-impl.ts b/packages/zone.js/lib/zone-impl.ts\nindex f0e01ee2c0ec..ba2fb0367e3b 100644\n--- a/packages/zone.js/lib/zone-impl.ts\n+++ b/packages/zone.js/lib/zone-impl.ts\n@@ -814,7 +814,7 @@ export function initZone(): ZoneType {\n     }\n \n     static __load_patch(name: string, fn: PatchFn, ignoreDuplicate = false): void {\n-      if (patches.hasOwnProperty(name)) {\n+      if (Object.hasOwn(patches, name)) {\n         // `checkDuplicate` option is defined from global variable\n         // so it works for all modules.\n         // `ignoreDuplicate` can work for the specified module\n@@ -1601,7 +1601,7 @@ export function initZone(): ZoneType {\n     macroTask: 'macroTask' = 'macroTask',\n     eventTask: 'eventTask' = 'eventTask';\n \n-  const patches: {[key: string]: any} = {};\n+  const patches: {[key: string]: any} = Object.create(null);\n   const _api: ZonePrivate = {\n     symbol: __symbol__,\n     currentZoneFrame: () => _currentZoneFrame,\ndiff --git a/packages/zone.js/test/typings/tsconfig.json b/packages/zone.js/test/typings/tsconfig.json\nindex 3e8dfdba34af..fabaf133d4d1 100644\n--- a/packages/zone.js/test/typings/tsconfig.json\n+++ b/packages/zone.js/test/typings/tsconfig.json\n@@ -13,7 +13,7 @@\n     \"noEmitOnError\": false,\n     \"stripInternal\": false,\n     \"strict\": true,\n-    \"lib\": [\"es5\", \"dom\", \"es2015.collection\", \"es2015.iterable\", \"es2015.promise\"]\n+    \"lib\": [\"es5\", \"dom\", \"es2015.collection\", \"es2015.iterable\", \"es2015.promise\", \"es2022.object\"]\n   },\n   \"files\": [\"./type.test.ts\", \"./node_modules/zone.js/zone.ts\"]\n }\ndiff --git a/packages/zone.js/tsconfig.json b/packages/zone.js/tsconfig.json\nindex e673fa744a3f..c4f34e08f941 100644\n--- a/packages/zone.js/tsconfig.json\n+++ b/packages/zone.js/tsconfig.json\n@@ -18,7 +18,8 @@\n       \"es2015.iterable\",\n       \"es2015.promise\",\n       \"es2015.symbol\",\n-      \"es2015.symbol.wellknown\"\n-    ],\n-  },\n+      \"es2015.symbol.wellknown\",\n+      \"es2022.object\"\n+    ]\n+  }\n }\n",
+  "recent_subjects": [
+    "fix(upgrade): support model() signals in downgradeComponent",
+    "feat(router): handle null and undefined inputs in RouterLinkActive",
+    "fix(service-worker): preserve referrer policy in asset requests",
+    "fix(service-worker): preserve referrer in asset requests",
+    "fix(compiler-cli): report diagnostic instead of crashing on malformed host binding"
+  ]
+}

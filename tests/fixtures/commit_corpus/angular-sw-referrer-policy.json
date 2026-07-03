@@ -1,0 +1,39 @@
+{
+  "id": "angular-sw-referrer-policy",
+  "source": "angular/angular@6f98f98f1f41",
+  "original_subject": "fix(service-worker): preserve referrer policy in asset requests",
+  "expected_types": [
+    "fix"
+  ],
+  "expected_scopes": [
+    "service-worker"
+  ],
+  "expected_keywords": [
+    [
+      "referrer"
+    ]
+  ],
+  "files": [
+    {
+      "path": "packages/service-worker/worker/src/assets.ts",
+      "status": "modified"
+    },
+    {
+      "path": "packages/service-worker/worker/test/happy_spec.ts",
+      "status": "modified"
+    },
+    {
+      "path": "packages/service-worker/worker/testing/fetch.ts",
+      "status": "modified"
+    }
+  ],
+  "stat": "packages/service-worker/worker/src/assets.ts      |    9 +++++----\n packages/service-worker/worker/test/happy_spec.ts |   18 ++++++++++++++++++\n packages/service-worker/worker/testing/fetch.ts   |    6 +++++-\n 3 files changed, 28 insertions(+), 5 deletions(-)",
+  "diff": "diff --git a/packages/service-worker/worker/src/assets.ts b/packages/service-worker/worker/src/assets.ts\nindex 108bc284ac49..82b19de9433a 100644\n--- a/packages/service-worker/worker/src/assets.ts\n+++ b/packages/service-worker/worker/src/assets.ts\n@@ -501,10 +501,10 @@ export abstract class AssetGroup {\n    * Create a new `Request` based on the specified URL and `RequestInit` options, preserving only\n    * metadata that are known to be safe.\n    *\n-   * Currently, headers, referrer, redirect policy, an explicit `credentials: 'omit'`, and the HTTP\n-   * cache mode are preserved. On cross-origin redirects, sensitive headers are removed. This\n-   * includes `Authorization`, as required by the Fetch redirect algorithm, and forbidden request\n-   * headers that could contain credentials.\n+   * Currently, headers, referrer, referrer policy, redirect policy, an explicit\n+   * `credentials: 'omit'`, and the HTTP cache mode are preserved. On cross-origin redirects,\n+   * sensitive headers are removed. This includes `Authorization`, as required by the Fetch redirect\n+   * algorithm, and forbidden request headers that could contain credentials.\n    *\n    * NOTE:\n    *   `credentials: 'same-origin'` and `credentials: 'include'` are intentionally not preserved.\n@@ -533,6 +533,7 @@ export abstract class AssetGroup {\n     const init: RequestInit = {\n       headers,\n       referrer: options.referrer,\n+      referrerPolicy: options.referrerPolicy,\n       redirect: options.redirect,\n     };\n \ndiff --git a/packages/service-worker/worker/test/happy_spec.ts b/packages/service-worker/worker/test/happy_spec.ts\nindex 1dc77a795619..9d2b6b480c40 100644\n--- a/packages/service-worker/worker/test/happy_spec.ts\n+++ b/packages/service-worker/worker/test/happy_spec.ts\n@@ -1688,6 +1688,14 @@ import {envIsSupported} from '../testing/utils';\n         expect(bazReq.referrer).toBe('');\n       });\n \n+      it(`passes 'referrerPolicy' through to the server`, async () => {\n+        const reqInit = {referrerPolicy: 'no-referrer'};\n+        expect(await makeRequest(scope, '/baz.txt', undefined, reqInit)).toBe('this is baz');\n+\n+        const [bazReq] = server.getRequestsFor('/baz.txt');\n+        expect(bazReq.referrerPolicy).toBe('no-referrer');\n+      });\n+\n       it(`passes 'cache' through to the server`, async () => {\n         // Request a lazy-cached asset (so that it is fetched from the network) and provide an\n         // explicit HTTP cache mode.\n@@ -1801,6 +1809,16 @@ import {envIsSupported} from '../testing/utils';\n           expect(redirectReq.referrer).toBe('');\n         });\n \n+        it(`passes 'referrerPolicy' through to the server`, async () => {\n+          const reqInit = {referrerPolicy: 'no-referrer'};\n+          expect(await makeRequest(scope, '/lazy/redirected.txt', undefined, reqInit)).toBe(\n+            'this was a redirect too',\n+          );\n+\n+          const [redirectReq] = server.getRequestsFor('/lazy/redirect-target.txt');\n+          expect(redirectReq.referrerPolicy).toBe('no-referrer');\n+        });\n+\n         it(`passes 'cache' through to the server`, async () => {\n           // Request a redirected, lazy-cached asset (so that it is fetched from the network) and\n           // provide an explicit HTTP cache mode.\ndiff --git a/packages/service-worker/worker/testing/fetch.ts b/packages/service-worker/worker/testing/fetch.ts\nindex 7ff5a3bfa3b3..0e6be61f6758 100644\n--- a/packages/service-worker/worker/testing/fetch.ts\n+++ b/packages/service-worker/worker/testing/fetch.ts\n@@ -131,7 +131,7 @@ export class MockRequest extends MockBody implements Request {\n   readonly mode: RequestMode = 'cors';\n   readonly redirect: RequestRedirect = 'follow';\n   readonly referrer: string = 'about:client';\n-  readonly referrerPolicy: ReferrerPolicy = 'no-referrer';\n+  readonly referrerPolicy: ReferrerPolicy = '';\n   readonly signal: AbortSignal = null as any;\n \n   url: string;\n@@ -166,6 +166,9 @@ export class MockRequest extends MockBody implements Request {\n     if (init.referrer !== undefined) {\n       this.referrer = init.referrer;\n     }\n+    if (init.referrerPolicy !== undefined) {\n+      this.referrerPolicy = init.referrerPolicy;\n+    }\n     if (init.destination !== undefined) {\n       this.destination = init.destination;\n     }\n@@ -183,6 +186,7 @@ export class MockRequest extends MockBody implements Request {\n       headers: this.headers,\n       redirect: this.redirect,\n       referrer: this.referrer,\n+      referrerPolicy: this.referrerPolicy,\n     });\n   }\n }\n",
+  "recent_subjects": [
+    "fix(service-worker): preserve referrer in asset requests",
+    "fix(compiler-cli): report diagnostic instead of crashing on malformed host binding",
+    "docs(forms): clarify debounce('blur') usage with custom FormValueControl",
+    "docs: add doc to focusBoundControl feature",
+    "docs: clarify signal forms limit metadata keys"
+  ]
+}

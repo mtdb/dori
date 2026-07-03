@@ -1,0 +1,35 @@
+{
+  "id": "dori-tui-missing-widgets",
+  "source": "dori@950e7d8",
+  "original_subject": "fix(dori): handle missing widgets when updating status and prompt labels",
+  "curated_subject": "fix(tui): handle missing widgets when updating status and prompt labels",
+  "expected_types": [
+    "fix"
+  ],
+  "expected_scopes": [
+    "tui",
+    "dori"
+  ],
+  "expected_keywords": [
+    [
+      "widget",
+      "label",
+      "status"
+    ]
+  ],
+  "files": [
+    {
+      "path": "dori/tui.py",
+      "status": "modified"
+    }
+  ],
+  "stat": "dori/tui.py |   13 ++++++++++---\n 1 file changed, 10 insertions(+), 3 deletions(-)",
+  "diff": "diff --git a/dori/tui.py b/dori/tui.py\nindex a88ebe5..1394480 100644\n--- a/dori/tui.py\n+++ b/dori/tui.py\n@@ -22,6 +22,7 @@ from textual import events\n from textual.app import App, ComposeResult\n from textual.binding import Binding\n from textual.containers import Horizontal, ScrollableContainer\n+from textual.css.query import NoMatches\n from textual.widget import Widget\n from textual.widgets import Input, Static\n \n@@ -366,8 +367,11 @@ class NemoApp(App):\n             return\n         self._state.available_vram_mib = free_mib\n         self._state.total_vram_mib = total_mib\n-        header_right = self.query_one(\"#header-right\", Static)\n-        header_right.update(_build_header_status(self._state))\n+        try:\n+            header_right = self.query_one(\"#header-right\", Static)\n+            header_right.update(_build_header_status(self._state))\n+        except NoMatches:\n+            pass\n \n     async def _poll_vram_header(self) -> None:\n         assert self._vram_poll_wakeup is not None\n@@ -416,7 +420,10 @@ class NemoApp(App):\n         inp.cursor_position = len(value)\n \n     def _set_prompt_label(self, value: str) -> None:\n-        self.query_one(\"#prompt-label\", Static).update(value)\n+        try:\n+            self.query_one(\"#prompt-label\", Static).update(value)\n+        except NoMatches:\n+            pass\n \n     async def _remove_last_exchange(self) -> None:\n         for widget in reversed(self._last_interaction_widgets):\n",
+  "recent_subjects": [
+    "fix(dori): add md5 check for unchanged files in update_workspace command",
+    "test(tests): Update test_init_presets.py to report unchanged managed files.",
+    "fix(boilerplate): add commit message retry options and collapse alternative subjects in subject line",
+    "test(tests): add tests for importing modules without script dir shadowing and loading ddgs without script dir shadowing",
+    "fix(boilerplate): fix import issues in ddgs and ollama modules"
+  ]
+}

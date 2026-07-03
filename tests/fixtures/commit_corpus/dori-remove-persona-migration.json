@@ -1,0 +1,50 @@
+{
+  "id": "dori-remove-persona-migration",
+  "source": "dori@09511fd",
+  "original_subject": "refactor(commands): remove legacy persona migration function and related tests",
+  "curated_subject": "refactor(commands): remove legacy persona migration",
+  "expected_types": [
+    "refactor",
+    "chore"
+  ],
+  "expected_scopes": [
+    "commands"
+  ],
+  "expected_keywords": [
+    [
+      "persona"
+    ],
+    [
+      "migration",
+      "legacy",
+      "remove"
+    ]
+  ],
+  "files": [
+    {
+      "path": "dori/commands.py",
+      "status": "modified"
+    },
+    {
+      "path": "dori/main.py",
+      "status": "modified"
+    },
+    {
+      "path": "tests/test_boilerplate.py",
+      "status": "modified"
+    },
+    {
+      "path": "tests/test_init_presets.py",
+      "status": "modified"
+    }
+  ],
+  "stat": "dori/commands.py           |   30 ------------------------------\n dori/main.py               |   16 +++++-----------\n tests/test_boilerplate.py  |    1 -\n tests/test_init_presets.py |   27 ---------------------------\n 4 files changed, 5 insertions(+), 69 deletions(-)",
+  "diff": "diff --git a/dori/commands.py b/dori/commands.py\nindex 76a459d..ff68b2a 100644\n--- a/dori/commands.py\n+++ b/dori/commands.py\n@@ -25,7 +25,6 @@ LEGACY_SEARCH_PATHS = {\n }\n MANIFEST_PATH = Path(\".manifest.json\")\n PERSONA_FILENAME = \"DORI.md\"\n-LEGACY_PERSONA_FILENAME = \"AGENTS.md\"\n \n \n def _resolve_boilerplate_dir(cwd: str) -> tuple[Path, Path, bool]:\n@@ -83,34 +82,6 @@ def _relative_runtime_path(path: Path, runtime_home: Path) -> str:\n     return path.relative_to(runtime_home).as_posix()\n \n \n-def migrate_legacy_persona_file(\n-    runtime_home: Path, manifest: dict[str, str] | None = None\n-) -> bool:\n-    \"\"\"Copy legacy AGENTS.md content into DORI.md when upgrading older installs.\"\"\"\n-    persona_path = runtime_home / PERSONA_FILENAME\n-    legacy_path = runtime_home / LEGACY_PERSONA_FILENAME\n-\n-    if persona_path.is_file():\n-        if manifest is not None and LEGACY_PERSONA_FILENAME in manifest:\n-            manifest[PERSONA_FILENAME] = manifest.pop(LEGACY_PERSONA_FILENAME)\n-        return False\n-\n-    if not legacy_path.is_file():\n-        return False\n-\n-    persona_path.parent.mkdir(parents=True, exist_ok=True)\n-    shutil.copy2(legacy_path, persona_path)\n-    console.print(f\"[green]Migrated[/green] {legacy_path.name} -> {persona_path.name}\")\n-\n-    if manifest is not None:\n-        if LEGACY_PERSONA_FILENAME in manifest:\n-            manifest[PERSONA_FILENAME] = manifest.pop(LEGACY_PERSONA_FILENAME)\n-        else:\n-            manifest[PERSONA_FILENAME] = _compute_md5(persona_path)\n-\n-    return True\n-\n-\n def _normalize_reminders_backend(reminders_backend: str | None) -> str | None:\n     if reminders_backend is None:\n         return None\n@@ -583,7 +554,6 @@ def update_workspace(\n         )\n \n     manifest = _load_manifest(runtime_home)\n-    migrate_legacy_persona_file(runtime_home, manifest)\n     detected_search_backend = _detect_existing_search_backend(\n         boilerplate_dir, runtime_home, manifest\n     )\ndiff --git a/dori/main.py b/dori/main.py\nindex eb20a67..f276882 100644\n--- a/dori/main.py\n+++ b/dori/main.py\n@@ -9,11 +9,7 @@ from rich.console import Console\n from rich.markup import escape\n \n from dori.chat import ConversationEngine\n-from dori.commands import (\n-    init_workspace,\n-    migrate_legacy_persona_file,\n-    update_workspace,\n-)\n+from dori.commands import init_workspace, update_workspace\n from dori.loader import (\n     get_runtime_home,\n     load_agents,\n@@ -90,16 +86,14 @@ def run():\n         sys.exit(1)\n \n     try:\n-        migrate_legacy_persona_file(runtime_home)\n-\n-        # Step 2: Search for DORI.md\n+        # Step 1: Search for DORI.md\n         agents_content = load_agents()\n \n-        # Step 3: Search for skills/\n+        # Step 2: Search for skills/\n         skills = load_skills()\n         available_vram_mib, total_vram_mib = load_available_vram()\n \n-        # Step 4: Initialize RuntimeState\n+        # Step 3: Initialize RuntimeState\n         state = RuntimeState(\n             cwd=cwd,\n             agents_content=agents_content,\n@@ -115,7 +109,7 @@ def run():\n             # Inline mode: single turn, print response to stdout, no TUI.\n             _run_inline(state, args.prompt.strip())\n         else:\n-            # Step 5: Start TUI interface\n+            # Step 4: Start TUI interface\n             start_tui(state)\n \n     except Exception as e:\ndiff --git a/tests/test_boilerplate.py b/tests/test_boilerplate.py\nindex f52c8b3..70faef2 100644\n--- a/tests/test_boilerplate.py\n+++ b/tests/test_boilerplate.py\n@@ -175,7 +175,6 @@ def test_reminders_presets_include_template_and_dbus() -> None:\n         \"template.py\",\n     ]\n     assert (ROOT / \"boilerplate\" / \"DORI.md\").exists()\n-    assert not (ROOT / \"boilerplate\" / \"AGENTS.md\").exists()\n     assert not (ROOT / \"boilerplate\" / \"scripts\" / \"reminders.py\").exists()\n     assert not (ROOT / \"boilerplate\" / \"skills\" / \"reminders.md\").exists()\n \ndiff --git a/tests/test_init_presets.py b/tests/test_init_presets.py\nindex e471cac..b5d1424 100644\n--- a/tests/test_init_presets.py\n+++ b/tests/test_init_presets.py\n@@ -179,33 +179,6 @@ def test_update_workspace_preserves_user_modified_file(tmp_path, monkeypatch, ca\n     assert \"not updated because it has local modifications\" in capsys.readouterr().out\n \n \n-def test_update_workspace_migrates_legacy_dori_persona_without_overwriting_changes(\n-    tmp_path, monkeypatch\n-):\n-    monkeypatch.setenv(\"HOME\", str(tmp_path))\n-    runtime_home = tmp_path / \".dori\"\n-    runtime_home.mkdir()\n-\n-    legacy_content = \"You are a custom legacy persona.\\n\"\n-    legacy_path = runtime_home / \"AGENTS.md\"\n-    legacy_path.write_text(legacy_content, encoding=\"utf-8\")\n-\n-    manifest_path = runtime_home / \".manifest.json\"\n-    legacy_hash = hashlib.md5(b\"old packaged content\\n\").hexdigest()  # noqa: S324\n-    manifest_path.write_text(\n-        json.dumps({\"AGENTS.md\": legacy_hash}, indent=2, sort_keys=True),\n-        encoding=\"utf-8\",\n-    )\n-\n-    update_workspace(str(ROOT))\n-\n-    dori_path = runtime_home / \"DORI.md\"\n-    assert dori_path.read_text(encoding=\"utf-8\") == legacy_content\n-    updated_manifest = json.loads(manifest_path.read_text(encoding=\"utf-8\"))\n-    assert updated_manifest[\"DORI.md\"] == legacy_hash\n-    assert \"AGENTS.md\" not in updated_manifest\n-\n-\n def test_update_workspace_recreates_missing_and_new_files(tmp_path, monkeypatch):\n     monkeypatch.setenv(\"HOME\", str(tmp_path))\n     runtime_home = tmp_path / \".dori\"\n",
+  "recent_subjects": [
+    "test(tests): update tests for chat and commit workflow changes",
+    "fix(dori): disallow script interaction in ConversationEngine by default",
+    "docs(docs): Update documentation for how it works and creating boilerplate skills.",
+    "fix(boilerplate): update commit workflow script to use dori.script functions",
+    "fix(workflow): surface non-utf8 stream errors"
+  ]
+}

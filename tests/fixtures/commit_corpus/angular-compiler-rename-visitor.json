@@ -1,0 +1,37 @@
+{
+  "id": "angular-compiler-rename-visitor",
+  "source": "angular/angular@74803c75cd88",
+  "original_subject": "refactor(compiler): remove `visitAttributeComment`",
+  "expected_types": [
+    "refactor"
+  ],
+  "expected_scopes": [
+    "compiler"
+  ],
+  "expected_keywords": [
+    [
+      "visitAttributeComment",
+      "visitStartTagComment",
+      "StartTagComment"
+    ]
+  ],
+  "files": [
+    {
+      "path": "packages/compiler/src/ml_parser/ast.ts",
+      "status": "modified"
+    },
+    {
+      "path": "packages/compiler/src/render3/r3_template_transform.ts",
+      "status": "modified"
+    }
+  ],
+  "stat": "packages/compiler/src/ml_parser/ast.ts             |    6 +++---\n .../compiler/src/render3/r3_template_transform.ts  |    2 +-\n 2 files changed, 4 insertions(+), 4 deletions(-)",
+  "diff": "diff --git a/packages/compiler/src/ml_parser/ast.ts b/packages/compiler/src/ml_parser/ast.ts\nindex 8faf142f58c5..b0ce912114a6 100644\n--- a/packages/compiler/src/ml_parser/ast.ts\n+++ b/packages/compiler/src/ml_parser/ast.ts\n@@ -105,7 +105,7 @@ export class StartTagComment implements BaseNode {\n     public sourceSpan: ParseSourceSpan,\n   ) {}\n   visit(visitor: Visitor, context: any): any {\n-    return visitor.visitAttributeComment ? visitor.visitAttributeComment(this, context) : undefined;\n+    return visitor.visitStartTagComment ? visitor.visitStartTagComment(this, context) : undefined;\n   }\n }\n \n@@ -237,7 +237,7 @@ export interface Visitor {\n   visitLetDeclaration(decl: LetDeclaration, context: any): any;\n   visitComponent(component: Component, context: any): any;\n   visitDirective(directive: Directive, context: any): any;\n-  visitAttributeComment?(comment: StartTagComment, context: any): any;\n+  visitStartTagComment?(comment: StartTagComment, context: any): any;\n }\n \n export function visitAll(visitor: Visitor, nodes: Node[], context: any = null): any[] {\n@@ -268,7 +268,7 @@ export class RecursiveVisitor implements Visitor {\n   }\n \n   visitAttribute(ast: Attribute, context: any): any {}\n-  visitAttributeComment(ast: StartTagComment, context: any): any {}\n+  visitStartTagComment(ast: StartTagComment, context: any): any {}\n   visitText(ast: Text, context: any): any {}\n   visitComment(ast: Comment, context: any): any {}\n \ndiff --git a/packages/compiler/src/render3/r3_template_transform.ts b/packages/compiler/src/render3/r3_template_transform.ts\nindex 370b2a530453..7b7e746add8c 100644\n--- a/packages/compiler/src/render3/r3_template_transform.ts\n+++ b/packages/compiler/src/render3/r3_template_transform.ts\n@@ -355,7 +355,7 @@ class HtmlAstToIvyAst implements html.Visitor {\n     return null;\n   }\n \n-  visitAttributeComment(comment: html.StartTagComment): null {\n+  visitStartTagComment(comment: html.StartTagComment): null {\n     if (this.options.collectCommentNodes) {\n       this.commentNodes.push(new t.Comment(comment.value || '', comment.sourceSpan));\n     }\n",
+  "recent_subjects": [
+    "docs(forms): correct signal field access in form model example",
+    "fix(compiler-cli): include toSignal in debugName transform",
+    "docs: add documentation for HttpClient response body size limit and related error NG02825",
+    "docs(docs-infra): fix typo and malformed markdown bullet in angular-developer skill",
+    "refactor(core): enable foreign components to render content lazily"
+  ]
+}

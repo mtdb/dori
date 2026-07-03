@@ -1,0 +1,38 @@
+{
+  "id": "dori-script-partial-writes",
+  "source": "dori@e152f4b",
+  "original_subject": "fix(script): handle partial writes and reject string choices",
+  "curated_subject": "fix(script): handle partial writes and reject string choices",
+  "expected_types": [
+    "fix"
+  ],
+  "expected_scopes": [
+    "script"
+  ],
+  "expected_keywords": [
+    [
+      "write",
+      "choices",
+      "choose"
+    ]
+  ],
+  "files": [
+    {
+      "path": "dori/script.py",
+      "status": "modified"
+    },
+    {
+      "path": "tests/test_script_api.py",
+      "status": "modified"
+    }
+  ],
+  "stat": "dori/script.py           |   13 +++++++++-\n tests/test_script_api.py |   61 ++++++++++++++++++++++++++++++++++++++++++++++\n 2 files changed, 73 insertions(+), 1 deletion(-)",
+  "diff": "diff --git a/dori/script.py b/dori/script.py\nindex 2e93ffe..499ecf2 100644\n--- a/dori/script.py\n+++ b/dori/script.py\n@@ -97,6 +97,8 @@ def _validate_prompt(prompt: str) -> str:\n \n \n def _validate_choices(choices: Sequence[str], default: str | None) -> list[str]:\n+    if isinstance(choices, (str, bytes)):\n+        raise ValueError(\"choose requires a sequence of choice strings\")\n     if not choices:\n         raise ValueError(\"choose requires at least one choice\")\n \n@@ -158,7 +160,7 @@ def _request(payload: dict[str, Any]) -> dict[str, Any] | None:\n     )\n \n     try:\n-        os.write(request_fd, encoded_message)\n+        _write_all(request_fd, encoded_message)\n     except OSError as error:\n         raise RuntimeError(\"Failed to write Dori interaction request.\") from error\n \n@@ -209,3 +211,12 @@ def _read_line(fd: int) -> str | None:\n         return chunks.decode(\"utf-8\")\n     except UnicodeDecodeError as error:\n         raise RuntimeError(\"Dori returned non-UTF-8 interaction data.\") from error\n+\n+\n+def _write_all(fd: int, data: bytes) -> None:\n+    total_written = 0\n+    while total_written < len(data):\n+        written = os.write(fd, data[total_written:])\n+        if written <= 0:\n+            raise OSError(\"short write\")\n+        total_written += written\ndiff --git a/tests/test_script_api.py b/tests/test_script_api.py\nindex c21f74a..4d677da 100644\n--- a/tests/test_script_api.py\n+++ b/tests/test_script_api.py\n@@ -39,6 +39,13 @@ def test_choose_rejects_empty_duplicate_and_invalid_default():\n         choose(\"Pick\", [\"a\"], default=\"b\")\n \n \n+def test_choose_rejects_string_like_choices():\n+    with pytest.raises(ValueError, match=\"sequence of choice strings\"):\n+        choose(\"Pick\", \"abc\")\n+    with pytest.raises(ValueError, match=\"sequence of choice strings\"):\n+        choose(\"Pick\", b\"abc\")\n+\n+\n def test_ask_raises_when_interaction_is_disabled(monkeypatch):\n     monkeypatch.setenv(\"DORI_INTERACTION_DISABLED\", \"1\")\n \n@@ -142,6 +149,60 @@ def test_choose_sends_compact_request_and_reads_matching_response(monkeypatch):\n     }\n \n \n+def test_request_retries_until_full_json_line_is_written(monkeypatch):\n+    request_read, request_write = os.pipe()\n+    response_read, response_write = os.pipe()\n+    _set_channel_env(monkeypatch, request_write, response_read)\n+\n+    real_write = script.os.write\n+    writes: list[int] = []\n+\n+    def partial_write(fd: int, data: bytes) -> int:\n+        if fd != request_write:\n+            return real_write(fd, data)\n+\n+        chunk_size = min(5, len(data))\n+        writes.append(chunk_size)\n+        return real_write(fd, data[:chunk_size])\n+\n+    monkeypatch.setattr(script.os, \"write\", partial_write)\n+\n+    request_bytes: list[bytes] = []\n+\n+    def reply():\n+        buffer = bytearray()\n+        while True:\n+            chunk = os.read(request_read, 1)\n+            if chunk == b\"\\n\":\n+                break\n+            buffer.extend(chunk)\n+        request_bytes.append(bytes(buffer))\n+        request = json.loads(buffer.decode(\"utf-8\"))\n+        os.write(\n+            response_write,\n+            (\n+                json.dumps({\"version\": 1, \"id\": request[\"id\"], \"answer\": \"ok\"}) + \"\\n\"\n+            ).encode(\"utf-8\"),\n+        )\n+\n+    thread = threading.Thread(target=reply)\n+    thread.start()\n+\n+    try:\n+        assert ask(\"Name\") == \"ok\"\n+    finally:\n+        thread.join(timeout=5)\n+        os.close(request_read)\n+        os.close(request_write)\n+        os.close(response_read)\n+        os.close(response_write)\n+\n+    assert len(writes) > 1\n+    request = json.loads(request_bytes[0].decode(\"utf-8\"))\n+    assert request[\"type\"] == \"ask\"\n+    assert request[\"prompt\"] == \"Name\"\n+\n+\n def test_request_raises_for_mismatched_response_id(monkeypatch):\n     request_read, request_write = os.pipe()\n     response_read, response_write = os.pipe()\n",
+  "recent_subjects": [
+    "test(script): cover protocol version rejection",
+    "feat(script): add minimal interaction API",
+    "docs: design chat-driven script interactions",
+    "fix(dori): handle missing widgets when updating status and prompt labels",
+    "fix(dori): add md5 check for unchanged files in update_workspace command"
+  ]
+}
